@@ -7,6 +7,7 @@ use std::os::raw::c_char;
 
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Method, Request, Response, Server, StatusCode};
+use sqlx::sqlite::{SqlitePool, SqlitePoolOptions};
 use tokio::runtime::Runtime;
 
 use roc_std::{RocResult, RocStr};
@@ -107,7 +108,7 @@ async fn fake_db_call(delay_ms: u64) -> u64 {
     1
 }
 
-async fn root(mut req: Request<Body>) -> Result<Response<Body>, Infallible> {
+async fn root(_pool: SqlitePool, mut req: Request<Body>) -> Result<Response<Body>, Infallible> {
     let mut resp = Response::new(Body::from(""));
     let mut cont_ptr: usize = 0;
 
@@ -220,6 +221,7 @@ unsafe fn call_LoadBodyCont_closure(data_ptr: usize, result: RocResult<RocStr, (
 
 #[no_mangle]
 pub extern "C" fn rust_main() -> i32 {
+    dotenvy::dotenv().ok();
     assert_eq!(
         unsafe { call_Continuation_result_size() },
         std::mem::size_of::<*const c_void>()
@@ -234,13 +236,24 @@ pub extern "C" fn rust_main() -> i32 {
                 .unwrap(),
         );
         RT.assume_init_ref().block_on(async {
+            let pool = SqlitePoolOptions::new()
+                .max_connections(20)
+                .connect(
+                    &std::env::var("DATABASE_URL")
+                        .expect("failed to load DATABASE_URL environment variable"),
+                )
+                .await
+                .expect("failed to connect to database");
             // For every connection, we must make a `Service` to handle all
             // incoming HTTP requests on said connection.
-            let make_svc = make_service_fn(|_conn| {
+            let make_svc = make_service_fn(move |_conn| {
                 // This is the `Service` that will handle the connection.
                 // `service_fn` is a helper to convert a function that
                 // returns a Response into a `Service`.
-                async { Ok::<_, Infallible>(service_fn(root)) }
+
+                // Pool is meant to be cloned to a handler and should be cheap to clone here.
+                let pool = pool.clone();
+                async { Ok::<_, Infallible>(service_fn(move |req| root(pool.clone(), req))) }
             });
             let addr = ([0, 0, 0, 0], 3000).into();
 
