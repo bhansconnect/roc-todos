@@ -137,7 +137,7 @@ async fn root(_pool: SqlitePool, mut req: Request<Body>) -> Result<Response<Body
                 }
                 1 => {
                     // LoadBody
-                    // We steal the mody and replace it with an empty body.
+                    // We steal the body and replace it with an empty body.
                     // Future calls to this method will get an empty string.
                     let mut tmp_body = Body::from("");
                     std::mem::swap(&mut tmp_body, req.body_mut());
