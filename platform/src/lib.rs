@@ -10,7 +10,11 @@ use hyper::{Body, Method, Request, Response, Server, StatusCode};
 use sqlx::sqlite::{SqlitePool, SqlitePoolOptions};
 use tokio::runtime::Runtime;
 
-use roc_std::{RocResult, RocStr};
+use roc_std::{RocList, RocResult, RocStr};
+
+// The glue code can't generate everything, but at least it can generate SqlData type.
+mod glue;
+use glue::{discriminant_SqlData, discriminant_SqlError, SqlData, SqlError};
 
 extern "C" {
     #[link_name = "roc__mainForHost_1_exposed_generic"]
@@ -27,7 +31,11 @@ extern "C" {
     fn call_Continuation_result_size() -> usize;
 
     #[link_name = "roc__mainForHost_1__DBRequestCont_caller"]
-    fn call_DBRequestCont(flags: *const u64, closure_data: *const u8, output: *mut usize);
+    fn call_DBRequestCont(
+        flags: *const RocResult<RocList<SqlData>, SqlError>,
+        closure_data: *const u8,
+        output: *mut usize,
+    );
 
     #[link_name = "roc__mainForHost_1__DBRequestCont_result_size"]
     fn call_DBRequestCont_result_size() -> usize;
@@ -108,7 +116,8 @@ async fn fake_db_call(delay_ms: u64) -> u64 {
     1
 }
 
-async fn root(_pool: SqlitePool, mut req: Request<Body>) -> Result<Response<Body>, Infallible> {
+async fn root(pool: SqlitePool, mut req: Request<Body>) -> Result<Response<Body>, Infallible> {
+    dbg!(&req);
     let mut resp = Response::new(Body::from(""));
     let mut cont_ptr: usize = 0;
 
@@ -129,12 +138,20 @@ async fn root(_pool: SqlitePool, mut req: Request<Body>) -> Result<Response<Body
                 0 => {
                     // DBRequest
                     let untagged_ptr = remove_tag(cont_ptr);
-                    // We guarantee the delay is the first part of the tag.
-                    // So we can just treate this as a pointer to the delay.
-                    let delay_ms = *(untagged_ptr as *const u64);
-                    let val = fake_db_call(delay_ms).await;
-                    cont_ptr = call_DBRequestCont_closure(cont_ptr, val);
+                    // First this is a Str for the query.
+                    // Then it is a List of SqlData.
+                    // Finally it is the continuation.
+                    let query_ptr = untagged_ptr as *mut RocStr;
+                    let bind_params_ptr = (untagged_ptr + std::mem::size_of::<RocStr>())
+                        as *mut RocList<glue::SqlData>;
+
                     // TODO: enable generic SQL queries here.
+
+                    // Need to drop pointed to data that Roc returned to us.
+                    std::ptr::drop_in_place(query_ptr);
+                    std::ptr::drop_in_place(bind_params_ptr);
+                    cont_ptr =
+                        call_DBRequestCont_closure(cont_ptr, RocResult::err(SqlError::QueryFailed));
                     // Return a list of tag unions that map from columns to specific types.
                     // Eventually will need to distinguish read one vs many vs write queries.
                     // Either build the query using a pointer and effects
@@ -178,8 +195,7 @@ async fn root(_pool: SqlitePool, mut req: Request<Body>) -> Result<Response<Body
                         .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
                     // TODO: Look into directly supporting RocStr here to avoid the copy.
                     *resp.body_mut() = Body::from((&*out_ptr).body.as_str().to_owned());
-                    // Dropping doesn't work right with pointers to types.
-                    // Work around that.
+                    // Need to drop pointed to data that Roc returned to us.
                     std::ptr::drop_in_place(out_ptr);
                     break;
                 }
@@ -195,26 +211,22 @@ async fn root(_pool: SqlitePool, mut req: Request<Body>) -> Result<Response<Body
     Ok(resp)
 }
 
-unsafe fn call_DBRequestCont_closure(args_and_data_ptr: usize, val: u64) -> usize {
-    let closure_data_ptr = remove_tag(args_and_data_ptr + 16);
+unsafe fn call_DBRequestCont_closure(
+    args_and_data_ptr: usize,
+    row: RocResult<RocList<SqlData>, SqlError>,
+) -> usize {
+    let closure_data_ptr = remove_tag(
+        args_and_data_ptr + std::mem::size_of::<RocStr>() + std::mem::size_of::<RocList<SqlData>>(),
+    );
     let mut cont_ptr: usize = 0;
 
     call_DBRequestCont(
-        &val,
+        &row,
         closure_data_ptr as *const u8,
         // buffer.as_mut_ptr() as *mut u8,
         &mut cont_ptr,
     );
     deallocate_refcounted_tag(args_and_data_ptr);
-
-    // TODO: With nested continuations, this may need to be used.
-    // Ran into issues related to it in the 04-nested-future-continuations
-    // call_Continuation(
-    //     // This flags pointer will never get dereferenced
-    //     MaybeUninit::uninit().as_ptr(),
-    //     buffer.as_ptr() as *const u8,
-    //     &mut cont_ptr,
-    // );
 
     cont_ptr
 }
@@ -230,15 +242,6 @@ unsafe fn call_LoadBodyCont_closure(data_ptr: usize, result: RocResult<RocStr, (
         &mut cont_ptr,
     );
     deallocate_refcounted_tag(data_ptr);
-
-    // TODO: With nested continuations, this may need to be used.
-    // Ran into issues related to it in the 04-nested-future-continuations
-    // call_Continuation(
-    //     // This flags pointer will never get dereferenced
-    //     MaybeUninit::uninit().as_ptr(),
-    //     buffer.as_ptr() as *const u8,
-    //     &mut cont_ptr,
-    // );
 
     cont_ptr
 }
