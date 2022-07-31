@@ -21,7 +21,7 @@ SqlError : [
 
 mainForHost : Request -> Effect
     [
-        DBFetchOne Str (List SqlData) ((Result (List SqlData) SqlError -> Effect Continuation) as DBRequestCont),
+        DBFetchOne Str (List SqlData) ((Result (List SqlData) SqlError -> Effect Continuation) as DBFetchOneCont),
         LoadBody ((Result Str {} -> Effect Continuation) as LoadBodyCont),
         Response { body: Str, status: U16 }
     ] as Continuation

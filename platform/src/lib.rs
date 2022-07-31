@@ -7,14 +7,15 @@ use std::os::raw::c_char;
 
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Method, Request, Response, Server, StatusCode};
-use sqlx::sqlite::{SqlitePool, SqlitePoolOptions};
+use sqlx::sqlite::{SqlitePool, SqlitePoolOptions, SqliteRow};
+use sqlx::{Column, Row, TypeInfo};
 use tokio::runtime::Runtime;
 
 use roc_std::{RocList, RocResult, RocStr};
 
 // The glue code can't generate everything, but at least it can generate SqlData type.
 mod glue;
-use glue::{discriminant_SqlData, discriminant_SqlError, SqlData, SqlError};
+use glue::{discriminant_SqlData, SqlData, SqlError};
 
 extern "C" {
     #[link_name = "roc__mainForHost_1_exposed_generic"]
@@ -30,15 +31,15 @@ extern "C" {
     #[link_name = "roc__mainForHost_1__Continuation_result_size"]
     fn call_Continuation_result_size() -> usize;
 
-    #[link_name = "roc__mainForHost_1__DBRequestCont_caller"]
-    fn call_DBRequestCont(
+    #[link_name = "roc__mainForHost_1__DBFetchOneCont_caller"]
+    fn call_DBFetchOneCont(
         flags: *const RocResult<RocList<SqlData>, SqlError>,
         closure_data: *const u8,
         output: *mut usize,
     );
 
-    #[link_name = "roc__mainForHost_1__DBRequestCont_result_size"]
-    fn call_DBRequestCont_result_size() -> usize;
+    #[link_name = "roc__mainForHost_1__DBFetchOneCont_result_size"]
+    fn call_DBFetchOneCont_result_size() -> usize;
 
     #[link_name = "roc__mainForHost_1__LoadBodyCont_caller"]
     fn call_LoadBodyCont(
@@ -109,15 +110,20 @@ struct RocResponse {
     status: u16,
 }
 
-#[inline(never)]
-async fn fake_db_call(delay_ms: u64) -> u64 {
-    tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
-    // This is our dummy db call result.
-    1
+fn translate_row(row: SqliteRow) -> RocList<SqlData> {
+    RocList::from_iter(row.columns().iter().map(|col| {
+        // Some reason they only expose the name and not the enum.
+        match col.type_info().name() {
+            "TEXT" => {
+                let val: &str = row.get_unchecked(col.ordinal());
+                SqlData::Text(RocStr::from(val))
+            }
+            _ => todo!(),
+        }
+    }))
 }
 
 async fn root(pool: SqlitePool, mut req: Request<Body>) -> Result<Response<Body>, Infallible> {
-    dbg!(&req);
     let mut resp = Response::new(Body::from(""));
     let mut cont_ptr: usize = 0;
 
@@ -136,45 +142,29 @@ async fn root(pool: SqlitePool, mut req: Request<Body>) -> Result<Response<Body>
         loop {
             match get_tag(cont_ptr) {
                 0 => {
-                    // DBRequest
+                    // DBFetchOne
                     let untagged_ptr = remove_tag(cont_ptr);
-                    // First this is a Str for the query.
-                    // Then it is a List of SqlData.
-                    // Finally it is the continuation.
-                    let query_ptr = untagged_ptr as *mut RocStr;
-                    let bind_params_ptr = (untagged_ptr + std::mem::size_of::<RocStr>())
-                        as *mut RocList<glue::SqlData>;
+                    let query_ptr = untagged_ptr;
+                    let bind_params_ptr = untagged_ptr + std::mem::size_of::<RocStr>();
 
-                    // TODO: enable generic SQL queries here.
+                    let mut query = sqlx::query((&*(query_ptr as *const RocStr)).as_str());
+                    for data in (&*(bind_params_ptr as *const RocList<SqlData>)).iter() {
+                        match data.discriminant() {
+                            discriminant_SqlData::Int => query = query.bind(data.as_Int()),
+                            _ => todo!(),
+                        }
+                    }
+                    let row = query
+                        .fetch_one(&pool)
+                        .await
+                        .map(translate_row)
+                        .map_err(|_err| SqlError::QueryFailed);
+                    let row = RocResult::from(row);
 
                     // Need to drop pointed to data that Roc returned to us.
-                    std::ptr::drop_in_place(query_ptr);
-                    std::ptr::drop_in_place(bind_params_ptr);
-                    cont_ptr =
-                        call_DBRequestCont_closure(cont_ptr, RocResult::err(SqlError::QueryFailed));
-                    // Return a list of tag unions that map from columns to specific types.
-                    // Eventually will need to distinguish read one vs many vs write queries.
-                    // Either build the query using a pointer and effects
-                    // or take a string and list of params to build the query here.
-                    // Below is an example query.
-                    // use sqlx::sqlite::SqliteRow;
-                    // use sqlx::Row;
-                    // #[derive(Debug)]
-                    // struct Todo {
-                    //     id: i64,
-                    //     title: String,
-                    //     completed: bool,
-                    // }
-                    // let rows = sqlx::query("SELECT id, title, completed FROM todos")
-                    //     .map(|row: SqliteRow| Todo {
-                    //         id: row.get("id"),
-                    //         title: row.get("title"),
-                    //         completed: row.get("completed"),
-                    //     })
-                    //     .fetch_all(&pool)
-                    //     .await
-                    //     .unwrap();
-                    // dbg!(rows);
+                    std::ptr::drop_in_place(query_ptr as *mut RocStr);
+                    std::ptr::drop_in_place(bind_params_ptr as *mut RocList<SqlData>);
+                    cont_ptr = call_DBFetchOneCont_closure(cont_ptr, row);
                 }
                 1 => {
                     // LoadBody
@@ -211,7 +201,7 @@ async fn root(pool: SqlitePool, mut req: Request<Body>) -> Result<Response<Body>
     Ok(resp)
 }
 
-unsafe fn call_DBRequestCont_closure(
+unsafe fn call_DBFetchOneCont_closure(
     args_and_data_ptr: usize,
     row: RocResult<RocList<SqlData>, SqlError>,
 ) -> usize {
@@ -220,7 +210,7 @@ unsafe fn call_DBRequestCont_closure(
     );
     let mut cont_ptr: usize = 0;
 
-    call_DBRequestCont(
+    call_DBFetchOneCont(
         &row,
         closure_data_ptr as *const u8,
         // buffer.as_mut_ptr() as *mut u8,
@@ -253,7 +243,7 @@ pub extern "C" fn rust_main() -> i32 {
         unsafe { call_Continuation_result_size() },
         std::mem::size_of::<*const c_void>()
     );
-    assert!(unsafe { call_DBRequestCont_result_size() } <= std::mem::size_of::<*const c_void>());
+    assert!(unsafe { call_DBFetchOneCont_result_size() } <= std::mem::size_of::<*const c_void>());
     assert!(unsafe { call_LoadBodyCont_result_size() } <= std::mem::size_of::<*const c_void>());
     unsafe {
         RT = MaybeUninit::new(
