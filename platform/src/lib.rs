@@ -134,6 +134,30 @@ async fn root(_pool: SqlitePool, mut req: Request<Body>) -> Result<Response<Body
                     let delay_ms = *(untagged_ptr as *const u64);
                     let val = fake_db_call(delay_ms).await;
                     cont_ptr = call_DBRequestCont_closure(cont_ptr, val);
+                    // TODO: enable generic SQL queries here.
+                    // Return a list of tag unions that map from columns to specific types.
+                    // Eventually will need to distinguish read one vs many vs write queries.
+                    // Either build the query using a pointer and effects
+                    // or take a string and list of params to build the query here.
+                    // Below is an example query.
+                    // use sqlx::sqlite::SqliteRow;
+                    // use sqlx::Row;
+                    // #[derive(Debug)]
+                    // struct Todo {
+                    //     id: i64,
+                    //     title: String,
+                    //     completed: bool,
+                    // }
+                    // let rows = sqlx::query("SELECT id, title, completed FROM todos")
+                    //     .map(|row: SqliteRow| Todo {
+                    //         id: row.get("id"),
+                    //         title: row.get("title"),
+                    //         completed: row.get("completed"),
+                    //     })
+                    //     .fetch_all(&pool)
+                    //     .await
+                    //     .unwrap();
+                    // dbg!(rows);
                 }
                 1 => {
                     // LoadBody
