@@ -10,7 +10,7 @@ main = \req ->
     method <- Effect.method req |> after
     path <- Effect.path req |> after
     pathList = Str.split path "/"
-    # There is always a starting "/" so we ignore the first element of pathList
+    # There is always a starting "/" so we ignore the first element of pathList (always "")
     route = List.get pathList 1
     when T method route is
         T Get (Ok "") ->
