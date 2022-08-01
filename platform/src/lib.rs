@@ -5,6 +5,7 @@ use std::ffi::{c_void, CStr};
 use std::mem::MaybeUninit;
 use std::os::raw::c_char;
 
+use hyper::header::HeaderValue;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Method, Request, Response, Server, StatusCode};
 use sqlx::sqlite::{SqlitePool, SqlitePoolOptions, SqliteRow};
@@ -116,8 +117,15 @@ pub unsafe extern "C" fn roc_memset(dst: *mut c_void, c: i32, n: usize) -> *mut 
 }
 
 #[repr(C)]
+struct RocHeader {
+    k: RocStr,
+    v: RocStr,
+}
+
+#[repr(C)]
 struct RocResponse {
     body: RocStr,
+    headers: RocList<RocHeader>,
     status: u16,
 }
 
@@ -146,7 +154,7 @@ fn translate_row(row: SqliteRow) -> RocList<SqlData> {
 }
 
 async fn root(pool: SqlitePool, mut req: Request<Body>) -> Result<Response<Body>, Infallible> {
-    let mut resp = Response::new(Body::from(""));
+    let mut resp = Response::default();
     let mut cont_ptr: usize = 0;
 
     unsafe {
@@ -208,6 +216,22 @@ async fn root(pool: SqlitePool, mut req: Request<Body>) -> Result<Response<Body>
                         .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
                     // TODO: Look into directly supporting RocStr here to avoid the copy.
                     *resp.body_mut() = Body::from((&*out_ptr).body.as_str().to_owned());
+                    let header_map = resp.headers_mut();
+                    for RocHeader { k, v } in (&*out_ptr).headers.iter() {
+                        match HeaderValue::from_str(v.as_str()) {
+                            Ok(v) => {
+                                header_map.insert(k.as_str(), v);
+                            }
+                            Err(e) => {
+                                log::error!(
+                                    "Got invalid header value {} with error {:?}...ignoring",
+                                    v,
+                                    e
+                                );
+                            }
+                        }
+                    }
+
                     // Need to drop pointed to data that Roc returned to us.
                     std::ptr::drop_in_place(out_ptr);
                     break;
