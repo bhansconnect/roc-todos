@@ -158,6 +158,7 @@ async fn root(
     base_url: usize,
     mut req: Request<Body>,
 ) -> Result<Response<Body>, Infallible> {
+    log::debug!("Got Request: {:?}", &req);
     let mut resp = Response::default();
     let mut cont_ptr: usize = 0;
 
@@ -198,7 +199,6 @@ async fn root(
                         .map(translate_row)
                         .map_err(|_err| SqlError::QueryFailed);
                     let row = RocResult::from(row);
-                    log::debug!("{:?}", &row);
 
                     // Need to drop pointed to data that Roc returned to us.
                     std::ptr::drop_in_place(query_ptr as *mut RocStr);

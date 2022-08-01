@@ -19,8 +19,11 @@ main = \baseUrl, req ->
     path <- Effect.path req |> after
     pathList = Str.split path "/"
     headers = [
-        {k: "Access-Control-Allow-Origin", v:"*"},
+        {k: "Access-Control-Allow-Origin", v: "*"},
+        {k: "Access-Control-Allow-Headers", v: "Content-Type"},
+        # {k: "Access-Control-Allow-Private-Network", v: "true"},
         {k: "Content-Type", v: "application/json"},
+        {k: "Access-Control-Request-Method", v: "OPTIONS, GET, POST, PATCH, DELETE"},
         {k: "Server", v: "Roc-Hyper"},
     ]
     # There is always a starting "/" so we ignore the first element of pathList (always "")
@@ -76,6 +79,10 @@ main = \baseUrl, req ->
                             Response {status: 400, body: "", headers} |> always
                 _ ->
                     Response {status: 404, body: "", headers} |> always
+        T Options _ ->
+            # Options header is a CORS request.
+            # Just accept this so that things can work while running from local network.
+            Response {status: 204, body: "", headers} |> always
         _ ->
             Response {status: 404, body: "", headers} |> always
 
