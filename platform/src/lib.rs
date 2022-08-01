@@ -63,21 +63,32 @@ static mut RT: MaybeUninit<Runtime> = MaybeUninit::uninit();
 
 #[no_mangle]
 pub unsafe extern "C" fn roc_alloc(size: usize, _alignment: u32) -> *mut c_void {
-    libc::malloc(size)
+    let out = libc::malloc(size);
+    log::debug!("Allocating {} bytes at 0x{:?}", size, out);
+    out
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn roc_realloc(
     c_ptr: *mut c_void,
     new_size: usize,
-    _old_size: usize,
+    old_size: usize,
     _alignment: u32,
 ) -> *mut c_void {
-    libc::realloc(c_ptr, new_size)
+    let out = libc::realloc(c_ptr, new_size);
+    log::debug!(
+        "reallocating {} bytes at 0x{:?} to {} at 0x{:?}",
+        old_size,
+        c_ptr,
+        new_size,
+        out
+    );
+    out
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn roc_dealloc(c_ptr: *mut c_void, _alignment: u32) {
+    log::debug!("freeing at 0x{:?}", c_ptr);
     libc::free(c_ptr);
 }
 
@@ -115,10 +126,21 @@ fn translate_row(row: SqliteRow) -> RocList<SqlData> {
         // Some reason they only expose the name and not the enum.
         match col.type_info().name() {
             "TEXT" => {
-                let val: &str = row.get_unchecked(col.ordinal());
-                SqlData::Text(RocStr::from(val))
+                let text: Option<&str> = row.get_unchecked(col.ordinal());
+                match text {
+                    Some(x) => SqlData::Text(unsafe { RocStr::from_slice_unchecked(x.as_bytes()) }),
+                    None => SqlData::Null,
+                }
             }
-            _ => todo!(),
+            "BOOLEAN" => match row.get_unchecked(col.ordinal()) {
+                Some(x) => SqlData::Boolean(x),
+                None => SqlData::Null,
+            },
+            "INTEGER" => match row.get_unchecked(col.ordinal()) {
+                Some(x) => SqlData::Int(x),
+                None => SqlData::Null,
+            },
+            x => todo!("Load sql data type: {}", x),
         }
     }))
 }
@@ -151,7 +173,7 @@ async fn root(pool: SqlitePool, mut req: Request<Body>) -> Result<Response<Body>
                     for data in (&*(bind_params_ptr as *const RocList<SqlData>)).iter() {
                         match data.discriminant() {
                             discriminant_SqlData::Int => query = query.bind(data.as_Int()),
-                            _ => todo!(),
+                            x => todo!("Bind param type: {:?}", x),
                         }
                     }
                     let row = query
@@ -160,6 +182,7 @@ async fn root(pool: SqlitePool, mut req: Request<Body>) -> Result<Response<Body>
                         .map(translate_row)
                         .map_err(|_err| SqlError::QueryFailed);
                     let row = RocResult::from(row);
+                    log::debug!("{:?}", &row);
 
                     // Need to drop pointed to data that Roc returned to us.
                     std::ptr::drop_in_place(query_ptr as *mut RocStr);
@@ -210,13 +233,10 @@ unsafe fn call_DBFetchOneCont_closure(
     );
     let mut cont_ptr: usize = 0;
 
-    call_DBFetchOneCont(
-        &row,
-        closure_data_ptr as *const u8,
-        // buffer.as_mut_ptr() as *mut u8,
-        &mut cont_ptr,
-    );
+    call_DBFetchOneCont(&row, closure_data_ptr as *const u8, &mut cont_ptr);
     deallocate_refcounted_tag(args_and_data_ptr);
+
+    std::mem::forget(row);
 
     cont_ptr
 }
@@ -225,13 +245,10 @@ unsafe fn call_LoadBodyCont_closure(data_ptr: usize, result: RocResult<RocStr, (
     let closure_data_ptr = remove_tag(data_ptr);
     let mut cont_ptr: usize = 0;
 
-    call_LoadBodyCont(
-        &result,
-        closure_data_ptr as *const u8,
-        // buffer.as_mut_ptr() as *mut u8,
-        &mut cont_ptr,
-    );
+    call_LoadBodyCont(&result, closure_data_ptr as *const u8, &mut cont_ptr);
     deallocate_refcounted_tag(data_ptr);
+
+    std::mem::forget(result);
 
     cont_ptr
 }
@@ -239,6 +256,8 @@ unsafe fn call_LoadBodyCont_closure(data_ptr: usize, result: RocResult<RocStr, (
 #[no_mangle]
 pub extern "C" fn rust_main() -> i32 {
     dotenvy::dotenv().ok();
+    pretty_env_logger::init();
+
     assert_eq!(
         unsafe { call_Continuation_result_size() },
         std::mem::size_of::<*const c_void>()
@@ -276,10 +295,10 @@ pub extern "C" fn rust_main() -> i32 {
 
             let server = Server::bind(&addr).serve(make_svc);
 
-            println!("Listening on http://{}", addr);
+            log::info!("Listening on http://{}", addr);
             // Run this server for... forever!
             if let Err(e) = server.await {
-                eprintln!("server error: {}", e);
+                log::error!("server error: {}", e);
             }
         });
     }

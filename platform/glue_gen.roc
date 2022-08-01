@@ -11,6 +11,7 @@ SqlData : [
     Real F64,
     Text Str,
     Blob (List U8),
+    Null,
 ]
 
 SqlError : [

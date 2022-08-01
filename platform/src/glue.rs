@@ -55,8 +55,9 @@ pub enum discriminant_SqlData {
     Blob = 0,
     Boolean = 1,
     Int = 2,
-    Real = 3,
-    Text = 4,
+    Null = 3,
+    Real = 4,
+    Text = 5,
 }
 
 impl core::fmt::Debug for discriminant_SqlData {
@@ -65,6 +66,7 @@ impl core::fmt::Debug for discriminant_SqlData {
             Self::Blob => f.write_str("discriminant_SqlData::Blob"),
             Self::Boolean => f.write_str("discriminant_SqlData::Boolean"),
             Self::Int => f.write_str("discriminant_SqlData::Int"),
+            Self::Null => f.write_str("discriminant_SqlData::Null"),
             Self::Real => f.write_str("discriminant_SqlData::Real"),
             Self::Text => f.write_str("discriminant_SqlData::Text"),
         }
@@ -573,6 +575,45 @@ impl SqlData {
 
     #[cfg(any(
         target_arch = "arm",
+        target_arch = "wasm32"
+    ))]
+    /// A tag named Null, which has no payload.
+    pub const Null: Self = unsafe {
+        let mut bytes = [0; core::mem::size_of::<SqlData>()];
+
+        bytes[16] = discriminant_SqlData::Null as u8;
+
+        core::mem::transmute::<[u8; core::mem::size_of::<SqlData>()], SqlData>(bytes)
+    };
+
+    #[cfg(any(
+        target_arch = "arm",
+        target_arch = "aarch64",
+        target_arch = "wasm32",
+        target_arch = "x86",
+        target_arch = "x86_64"
+    ))]
+    /// Other `into_` methods return a payload, but since the Null tag
+    /// has no payload, this does nothing and is only here for completeness.
+    pub fn into_Null(self) {
+        ()
+    }
+
+    #[cfg(any(
+        target_arch = "arm",
+        target_arch = "aarch64",
+        target_arch = "wasm32",
+        target_arch = "x86",
+        target_arch = "x86_64"
+    ))]
+    /// Other `as` methods return a payload, but since the Null tag
+    /// has no payload, this does nothing and is only here for completeness.
+    pub unsafe fn as_Null(&self) {
+        ()
+    }
+
+    #[cfg(any(
+        target_arch = "arm",
         target_arch = "aarch64",
         target_arch = "wasm32",
         target_arch = "x86",
@@ -705,6 +746,19 @@ impl SqlData {
         }
     }
 
+    #[cfg(any(
+        target_arch = "aarch64",
+        target_arch = "x86_64"
+    ))]
+    /// A tag named Null, which has no payload.
+    pub const Null: Self = unsafe {
+        let mut bytes = [0; core::mem::size_of::<SqlData>()];
+
+        bytes[24] = discriminant_SqlData::Null as u8;
+
+        core::mem::transmute::<[u8; core::mem::size_of::<SqlData>()], SqlData>(bytes)
+    };
+
     #[cfg(target_arch = "x86")]
     /// Returns which variant this tag union holds. Note that this never includes a payload!
     pub fn discriminant(&self) -> discriminant_SqlData {
@@ -724,6 +778,16 @@ impl SqlData {
             *(discriminant_ptr.add(12)) = discriminant;
         }
     }
+
+    #[cfg(target_arch = "x86")]
+    /// A tag named Null, which has no payload.
+    pub const Null: Self = unsafe {
+        let mut bytes = [0; core::mem::size_of::<SqlData>()];
+
+        bytes[12] = discriminant_SqlData::Null as u8;
+
+        core::mem::transmute::<[u8; core::mem::size_of::<SqlData>()], SqlData>(bytes)
+    };
 }
 
 impl Drop for SqlData {
@@ -740,6 +804,7 @@ impl Drop for SqlData {
                 discriminant_SqlData::Blob => unsafe { core::mem::ManuallyDrop::drop(&mut self.Blob) },
                 discriminant_SqlData::Boolean => {}
                 discriminant_SqlData::Int => {}
+                discriminant_SqlData::Null => {}
                 discriminant_SqlData::Real => {}
                 discriminant_SqlData::Text => unsafe { core::mem::ManuallyDrop::drop(&mut self.Text) },
             }
@@ -765,6 +830,7 @@ impl PartialEq for SqlData {
                 discriminant_SqlData::Blob => self.Blob == other.Blob,
                 discriminant_SqlData::Boolean => self.Boolean == other.Boolean,
                 discriminant_SqlData::Int => self.Int == other.Int,
+                discriminant_SqlData::Null => true,
                 discriminant_SqlData::Real => self.Real == other.Real,
                 discriminant_SqlData::Text => self.Text == other.Text,
             }
@@ -791,6 +857,7 @@ impl PartialOrd for SqlData {
                 discriminant_SqlData::Blob => self.Blob.partial_cmp(&other.Blob),
                 discriminant_SqlData::Boolean => self.Boolean.partial_cmp(&other.Boolean),
                 discriminant_SqlData::Int => self.Int.partial_cmp(&other.Int),
+                discriminant_SqlData::Null => Some(core::cmp::Ordering::Equal),
                 discriminant_SqlData::Real => self.Real.partial_cmp(&other.Real),
                 discriminant_SqlData::Text => self.Text.partial_cmp(&other.Text),
             }
@@ -817,6 +884,7 @@ impl PartialOrd for SqlData {
 //                 discriminant_SqlData::Blob => self.Blob.cmp(&other.Blob),
 //                 discriminant_SqlData::Boolean => self.Boolean.cmp(&other.Boolean),
 //                 discriminant_SqlData::Int => self.Int.cmp(&other.Int),
+//                 discriminant_SqlData::Null => core::cmp::Ordering::Equal,
 //                 discriminant_SqlData::Real => self.Real.cmp(&other.Real),
 //                 discriminant_SqlData::Text => self.Text.cmp(&other.Text),
 //             }
@@ -844,6 +912,10 @@ impl Clone for SqlData {
                 discriminant_SqlData::Int => Self {
                     Int: self.Int.clone(),
                 },
+                discriminant_SqlData::Null => core::mem::transmute::<
+                    core::mem::MaybeUninit<SqlData>,
+                    SqlData,
+                >(core::mem::MaybeUninit::uninit()),
                 discriminant_SqlData::Real => Self {
                     Real: self.Real.clone(),
                 },
@@ -881,6 +953,7 @@ impl Clone for SqlData {
 //                     discriminant_SqlData::Int.hash(state);
 //                     self.Int.hash(state);
 //                 },
+//             discriminant_SqlData::Null => discriminant_SqlData::Null.hash(state),
 //             discriminant_SqlData::Real => unsafe {
 //                     discriminant_SqlData::Real.hash(state);
 //                     self.Real.hash(state);
@@ -915,6 +988,7 @@ impl core::fmt::Debug for SqlData {
                 discriminant_SqlData::Int => f.debug_tuple("Int")
         .field(&self.Int)
         .finish(),
+                discriminant_SqlData::Null => f.write_str("Null"),
                 discriminant_SqlData::Real => f.debug_tuple("Real")
         .field(&self.Real)
         .finish(),

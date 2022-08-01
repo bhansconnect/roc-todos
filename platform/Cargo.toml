@@ -18,11 +18,13 @@ path = "src/main.rs"
 
 [dependencies]
 roc_std = { path = "../../roc/crates/roc_std" }
-hyper = { version = "0.14", features = ["full"] }
-tokio = { version = "1", features = ["full"] }
-sqlx = { version = "0.6", features = [ "runtime-tokio-rustls", "sqlite" ] }
-libc = "0.2"
-stackalloc = "1.2"
+hyper = { version = "0.14.20", features = ["full"] }
+tokio = { version = "1.20.1", features = ["full"] }
+sqlx = { version = "0.6.0", features = [ "runtime-tokio-rustls", "sqlite" ] }
+libc = "0.2.126"
+stackalloc = "1.2.0"
 dotenvy = "0.15.1"
+log = "0.4.17"
+pretty_env_logger = "0.4.0"
 
 [workspace]

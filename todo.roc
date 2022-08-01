@@ -14,7 +14,7 @@ main = \req ->
     route = List.get pathList 1
     when T method route is
         T Get (Ok "") ->
-            result <- dbFetchOne "SELECT title FROM todos WHERE id = ?1" [Int 1]
+            result <- dbFetchOne "SELECT title, completed, item_order FROM todos WHERE id = ?1" [Int 1]
             when result is
                 Ok row ->
                     when List.get row 0 is
