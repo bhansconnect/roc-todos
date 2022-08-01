@@ -64,7 +64,7 @@ static mut RT: MaybeUninit<Runtime> = MaybeUninit::uninit();
 #[no_mangle]
 pub unsafe extern "C" fn roc_alloc(size: usize, _alignment: u32) -> *mut c_void {
     let out = libc::malloc(size);
-    log::debug!("Allocating {} bytes at 0x{:?}", size, out);
+    log::trace!("Allocating {} bytes at 0x{:?}", size, out);
     out
 }
 
@@ -76,7 +76,7 @@ pub unsafe extern "C" fn roc_realloc(
     _alignment: u32,
 ) -> *mut c_void {
     let out = libc::realloc(c_ptr, new_size);
-    log::debug!(
+    log::trace!(
         "reallocating {} bytes at 0x{:?} to {} at 0x{:?}",
         old_size,
         c_ptr,
@@ -88,7 +88,7 @@ pub unsafe extern "C" fn roc_realloc(
 
 #[no_mangle]
 pub unsafe extern "C" fn roc_dealloc(c_ptr: *mut c_void, _alignment: u32) {
-    log::debug!("freeing at 0x{:?}", c_ptr);
+    log::trace!("freeing at 0x{:?}", c_ptr);
     libc::free(c_ptr);
 }
 

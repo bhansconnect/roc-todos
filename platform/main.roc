@@ -2,27 +2,12 @@ platform "cli"
     requires {} { main : _ }
     exposes []
     packages {}
-    imports [pf.Effect.{ Effect, Future, Request }]
+    imports [pf.Effect.{ Effect, Request }, pf.Sql]
     provides [mainForHost]
-
-SqlData : [
-    Boolean Bool,
-    Int I64,
-    Real F64,
-    Text Str,
-    Blob (List U8),
-    Null,
-]
-
-SqlError : [
-    QueryFailed,
-    # This is added to prevent a bindgen bug.
-    OtherErr,
-]
 
 mainForHost : Request -> Effect
     [
-        DBFetchOne Str (List SqlData) ((Result (List SqlData) SqlError -> Effect Continuation) as DBFetchOneCont),
+        DBFetchOne Str (List Sql.Data) ((Result (List Sql.Data) Sql.Error -> Effect Continuation) as DBFetchOneCont),
         LoadBody ((Result Str {} -> Effect Continuation) as LoadBodyCont),
         Response { body: Str, status: U16 }
     ] as Continuation

@@ -13,16 +13,76 @@ main = \req ->
     # There is always a starting "/" so we ignore the first element of pathList (always "")
     route = List.get pathList 1
     when T method route is
-        T Get (Ok "") ->
-            result <- dbFetchOne "SELECT title, completed, item_order FROM todos WHERE id = ?1" [Int 1]
-            when result is
-                Ok row ->
+        T Get (Ok idStr) ->
+            id =
+                when Str.toI64 idStr is
+                    Ok i -> i
+                    _ -> 1
+            rowResult <- dbFetchOne "SELECT title, completed, item_order FROM todos WHERE id = ?1" [Int id]
+            todoResult = Result.map rowResult \row ->
+                title =
                     when List.get row 0 is
-                        Ok (Text text) ->
-                            Response {status: 200, body: text} |> always
+                        Ok (Text t) ->
+                            Some t
                         _ ->
-                            Response {status: 200, body: "Todo loaded but had no data?"} |> always
-                Err _ ->
-                    Response {status: 200, body: "No todo found"} |> always
+                            None
+                completed =
+                    when List.get row 1 is
+                        Ok (Boolean b) ->
+                            Some b
+                        _ ->
+                            None
+                itemOrder =
+                    when List.get row 2 is
+                        Ok (Int i) ->
+                            Some i
+                        _ ->
+                            None
+                {id, title, completed, itemOrder}
+            # todoResult <- fetchTodo 1
+            when todoResult is
+                Ok {title: Some title, completed: Some completed} ->
+                    body =
+                        when completed is
+                            True -> "\(title)\t->\tCompleted"
+                            False -> "\(title)\t->\tIn Progress"
+                    Response {status: 200, body} |> always
+                _ ->
+                    Response {status: 200, body: "No todo found or err"} |> always
         _ ->
             Response {status: 404, body: ""} |> always
+
+# Some reason I can't pull this out into another function.
+# Type checking fails despite printing a matching type.
+# fetchTodo = \id, todoCont ->
+#     rowResult <- dbFetchOne "SELECT title, completed, item_order FROM todos WHERE id = ?1" [Int id]
+#     todoResult = Result.map rowResult \row ->
+#         title =
+#             when List.get row 0 is
+#                 Ok (Text t) ->
+#                     Some t
+#                 _ ->
+#                     None
+#         completed =
+#             when List.get row 1 is
+#                 Ok (Boolean b) ->
+#                     Some b
+#                 _ ->
+#                     None
+#         itemOrder =
+#             when List.get row 2 is
+#                 Ok (Int i) ->
+#                     Some i
+#                 _ ->
+#                     None
+#         {title, completed, itemOrder}
+#     out =
+#         when todoResult is
+#             Ok {title: Some title, completed: Some completed, itemOrder: itemOrder} ->
+#                 Ok {title, completed, itemOrder}
+#             Ok _ ->
+#                 Err InvalidTodo
+#             Err _ ->
+#                 Err QueryError
+#     todoCont out
+    
