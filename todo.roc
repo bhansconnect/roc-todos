@@ -6,6 +6,14 @@ app "todo"
 dbFetchOne = \str, params, cont ->
     DBFetchOne str params cont |> always
 
+# Spec
+# Get / -> Load all todos as a json
+# Post / -> create todo from json
+# Delete / -> delete all todos
+# Get /<id> -> load todo with id
+# Patch /<id> -> update todo with id from json
+# Delete /<id> -> delete todo with id
+
 main = \req ->
     method <- Effect.method req |> after
     path <- Effect.path req |> after
