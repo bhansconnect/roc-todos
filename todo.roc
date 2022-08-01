@@ -17,7 +17,7 @@ main = \req ->
             id =
                 when Str.toI64 idStr is
                     Ok i -> i
-                    _ -> 1
+                    _ -> 0
             rowResult <- dbFetchOne "SELECT title, completed, item_order FROM todos WHERE id = ?1" [Int id]
             todoResult = Result.map rowResult \row ->
                 title =
@@ -47,8 +47,11 @@ main = \req ->
                             True -> "\(title)\t->\tCompleted"
                             False -> "\(title)\t->\tIn Progress"
                     Response {status: 200, body} |> always
+                Ok {title: _, completed: _} ->
+                    # Either title or completed is None, this should be impossible.
+                    Response {status: 500, body: "Loaded invalid TODO..."} |> always
                 _ ->
-                    Response {status: 200, body: "No todo found or err"} |> always
+                    Response {status: 200, body: "No todo found with id \(idStr)"} |> always
         _ ->
             Response {status: 404, body: ""} |> always
 
