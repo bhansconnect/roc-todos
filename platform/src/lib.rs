@@ -20,7 +20,7 @@ use glue::{discriminant_SqlData, SqlData, SqlError};
 
 extern "C" {
     #[link_name = "roc__mainForHost_1_exposed_generic"]
-    fn roc_main(closure_data: *mut u8, req: *const Request<Body>);
+    fn roc_main(closure_data: *mut u8, base_url: *const RocStr, req: *const Request<Body>);
 
     #[link_name = "roc__mainForHost_size"]
     fn roc_main_size() -> usize;
@@ -136,7 +136,7 @@ fn translate_row(row: SqliteRow) -> RocList<SqlData> {
             "TEXT" => {
                 let text: Option<&str> = row.get_unchecked(col.ordinal());
                 match text {
-                    Some(x) => SqlData::Text(unsafe { RocStr::from_slice_unchecked(x.as_bytes()) }),
+                    Some(x) => SqlData::Text(RocStr::from(x)),
                     None => SqlData::Null,
                 }
             }
@@ -153,14 +153,22 @@ fn translate_row(row: SqliteRow) -> RocList<SqlData> {
     }))
 }
 
-async fn root(pool: SqlitePool, mut req: Request<Body>) -> Result<Response<Body>, Infallible> {
+async fn root(
+    pool: SqlitePool,
+    base_url: usize,
+    mut req: Request<Body>,
+) -> Result<Response<Body>, Infallible> {
     let mut resp = Response::default();
     let mut cont_ptr: usize = 0;
 
     unsafe {
         let size = roc_main_size();
         stackalloc::alloca(size, |buffer| {
-            roc_main(buffer.as_mut_ptr() as *mut u8, &req);
+            roc_main(
+                buffer.as_mut_ptr() as *mut u8,
+                base_url as *const RocStr,
+                &req,
+            );
 
             call_Continuation(
                 // This flags pointer will never get dereferenced
@@ -304,6 +312,17 @@ pub extern "C" fn rust_main() -> i32 {
                 )
                 .await
                 .expect("failed to connect to database");
+
+            // Since Roc* types are not Send I have to use usize a lot to get around await issues
+            let base_url = RocStr::from(
+                std::env::var("BASE_URL")
+                    .expect("failed to load BASE_URL environment variable")
+                    .as_str(),
+            );
+            let base_url_ptr = (&base_url as *const RocStr) as usize;
+            // We are just gonna leak this. It needs to live the entire application anyway.
+            std::mem::forget(base_url);
+
             // For every connection, we must make a `Service` to handle all
             // incoming HTTP requests on said connection.
             let make_svc = make_service_fn(move |_conn| {
@@ -313,7 +332,11 @@ pub extern "C" fn rust_main() -> i32 {
 
                 // Pool is meant to be cloned to a handler and should be cheap to clone here.
                 let pool = pool.clone();
-                async { Ok::<_, Infallible>(service_fn(move |req| root(pool.clone(), req))) }
+                async move {
+                    Ok::<_, Infallible>(service_fn(move |req| {
+                        root(pool.clone(), base_url_ptr, req)
+                    }))
+                }
             });
             let addr = ([0, 0, 0, 0], 3000).into();
 
@@ -362,23 +385,8 @@ pub extern "C" fn roc_fx_method(req: *const Request<Body>) -> RocMethod {
 
 #[no_mangle]
 pub unsafe extern "C" fn roc_fx_path(req: *const Request<Body>) -> RocStr {
-    RocStr::from_slice_unchecked((&*req).uri().path().as_bytes())
+    RocStr::from((&*req).uri().path())
 }
-
-// TODO: make this work somehow?
-// The issue is that we can't take ownership of the body to read it.
-// #[no_mangle]
-// pub unsafe extern "C" fn roc_fx_body(req_usize: usize) -> TraitObject {
-//     use hyper::body::HttpBody;
-//     let ptr: BodyFuturePtr = Box::into_raw(Box::new(async move {
-//         let req = req_usize as *const Request<Body>;
-//         match hyper::body::to_bytes((&*req).into_body().boxed()).await {
-//             Ok(bytes) => RocResult::ok(RocStr::from_slice_unchecked(&bytes)),
-//             _ => RocResult::err(()),
-//         }
-//     }));
-//     unsafe { std::mem::transmute(ptr) }
-// }
 
 unsafe fn deallocate_refcounted_tag(ptr: usize) {
     // TODO: handle this better.

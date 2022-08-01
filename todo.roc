@@ -14,7 +14,7 @@ dbFetchOne = \str, params, cont ->
 # Patch /<id> -> update todo with id from json
 # Delete /<id> -> delete todo with id
 
-main = \req ->
+main = \baseUrl, req ->
     method <- Effect.method req |> after
     path <- Effect.path req |> after
     pathList = Str.split path "/"
@@ -52,7 +52,7 @@ main = \req ->
                                     Some i
                                 _ ->
                                     None
-                        {url: "http://127.0.0.1:3000/\(idStr)", title, completed, itemOrder}
+                        {url: "\(baseUrl)/(idStr)", title, completed, itemOrder}
                     # todoResult <- fetchTodo 1
                     when todoResult is
                         Ok {url, title: Some title, completed: Some completed, itemOrder} ->

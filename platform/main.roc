@@ -7,10 +7,10 @@ platform "cli"
 
 Header : {k: Str, v: Str}
 
-mainForHost : Request -> Effect
+mainForHost : Str, Request -> Effect
     [
         DBFetchOne Str (List Sql.Data) ((Result (List Sql.Data) Sql.Error -> Effect Continuation) as DBFetchOneCont),
         LoadBody ((Result Str {} -> Effect Continuation) as LoadBodyCont),
         Response { body: Str, headers: List Header, status: U16 }
     ] as Continuation
-mainForHost = \req -> main req
+mainForHost = \baseUrl, req -> main baseUrl req
