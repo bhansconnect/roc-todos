@@ -31,7 +31,78 @@ main = \baseUrl, req ->
             when result is
                 Ok body ->
                     # TODO: decode json body, insert, and return created todo.
-                    Response {status: 200, body, headers} |> always
+                    kvsResult =
+                        {after: bodyAfter} <- Result.try (Str.splitFirst body "{")
+                        # This works around a bug with Str.splitLast
+                        afterWithSpace = Str.concat bodyAfter " "
+                        {before} <- Result.try (Str.splitLast afterWithSpace "}")
+                        kvsList =
+                            kvPair <- List.map (Str.split before ",")
+                            {before: key, after: value} <- Result.map (Str.splitLast kvPair ":")
+                            T (Str.trim key) (Str.trim value)
+                        resultDict, kvResult <-List.walkUntil kvsList (Ok Dict.empty)
+                        when T resultDict kvResult is
+                            T (Ok dict) (Ok (T k v)) ->
+                                Continue (Ok (Dict.insert dict k v))
+                            T _ (Err e) ->
+                                Break (Err e)
+                            T (Err e) _ ->
+                                Break (Err e)
+                            _ ->
+                                Break (Err HowDidIGetHere)
+
+                    when kvsResult is
+                        Ok kvs ->
+                            titleResult =
+                                title <- Result.try (Dict.get kvs "\"title\"") 
+                                {after: titleAfter} <- Result.try (Str.splitFirst title "\"")
+                                # This works around a bug with Str.splitLast
+                                afterWithSpace = Str.concat titleAfter " "
+                                {before} <- Result.map (Str.splitLast afterWithSpace "\"")
+                                before
+                            when titleResult is
+                                Ok title ->
+                                    insertResult <- dbExecute "INSERT INTO todos (title) VALUES (?1)" [Text title]
+                                    when insertResult is
+                                        Ok {lastInsertRowId: id} ->
+                                            rowResult <- dbFetchOne "SELECT title, completed, item_order FROM todos WHERE id = ?1" [Int id]
+                                            todoResult = Result.map rowResult \row ->
+                                                loadedTitle =
+                                                    when List.get row 0 is
+                                                        Ok (Text t) ->
+                                                            Some t
+                                                        _ ->
+                                                            None
+                                                completed =
+                                                    when List.get row 1 is
+                                                        Ok (Boolean b) ->
+                                                            Some b
+                                                        _ ->
+                                                            None
+                                                itemOrder =
+                                                    when List.get row 2 is
+                                                        Ok (Int i) ->
+                                                            Some i
+                                                        _ ->
+                                                            None
+                                                idStr = Num.toStr id
+                                                {url: "\(baseUrl)/\(idStr)", title: loadedTitle, completed, itemOrder}
+                                            when todoResult is
+                                                Ok {url, title: Some loadedTitle, completed: Some completed, itemOrder} ->
+                                                    # TODO replace this with json encoding
+                                                    todoStr = writeTodo "" {url, title: loadedTitle, completed, itemOrder}
+                                                    Response {status: 200, body: todoStr, headers} |> always
+                                                Ok {title: _, completed: _} ->
+                                                    # Either title or completed is None, this should be impossible.
+                                                    Response {status: 500, body: "Loaded invalid TODO?", headers} |> always
+                                                Err _ ->
+                                                    Response {status: 500, body: "", headers} |> always
+                                        Err _ ->
+                                            Response {status: 500, body: "", headers} |> always
+                                Err _ ->
+                                    Response {status: 400, body: "", headers} |> always
+                        Err _ ->
+                            Response {status: 400, body: "", headers} |> always
                 Err _ ->
                     Response {status: 500, body: "", headers} |> always
         T Delete (Ok "") ->

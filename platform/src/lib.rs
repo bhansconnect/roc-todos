@@ -219,6 +219,9 @@ async fn root(
                     for data in (&*(bind_params_ptr as *const RocList<SqlData>)).iter() {
                         match data.discriminant() {
                             discriminant_SqlData::Int => query = query.bind(data.as_Int()),
+                            discriminant_SqlData::Text => {
+                                query = query.bind(data.as_Text().as_str())
+                            }
                             x => todo!("Bind param type: {:?}", x),
                         }
                     }
@@ -249,6 +252,9 @@ async fn root(
                     for data in (&*(bind_params_ptr as *const RocList<SqlData>)).iter() {
                         match data.discriminant() {
                             discriminant_SqlData::Int => query = query.bind(data.as_Int()),
+                            discriminant_SqlData::Text => {
+                                query = query.bind(data.as_Text().as_str())
+                            }
                             x => todo!("Bind param type: {:?}", x),
                         }
                     }
@@ -276,6 +282,9 @@ async fn root(
                     for data in (&*(bind_params_ptr as *const RocList<SqlData>)).iter() {
                         match data.discriminant() {
                             discriminant_SqlData::Int => query = query.bind(data.as_Int()),
+                            discriminant_SqlData::Text => {
+                                query = query.bind(data.as_Text().as_str())
+                            }
                             x => todo!("Bind param type: {:?}", x),
                         }
                     }
