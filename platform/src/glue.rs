@@ -17,14 +17,14 @@
 #[derive(Clone, Copy, Eq, Ord, Hash, PartialEq, PartialOrd)]
 #[repr(u8)]
 pub enum discriminant_SqlError {
-    OtherErr = 0,
+    NotFound = 0,
     QueryFailed = 1,
 }
 
 impl core::fmt::Debug for discriminant_SqlError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            Self::OtherErr => f.write_str("discriminant_SqlError::OtherErr"),
+            Self::NotFound => f.write_str("discriminant_SqlError::NotFound"),
             Self::QueryFailed => f.write_str("discriminant_SqlError::QueryFailed"),
         }
     }
@@ -152,11 +152,11 @@ impl SqlError {
         target_arch = "x86",
         target_arch = "x86_64"
     ))]
-    /// A tag named OtherErr, which has no payload.
-    pub const OtherErr: Self = unsafe {
+    /// A tag named NotFound, which has no payload.
+    pub const NotFound: Self = unsafe {
         let mut bytes = [0; core::mem::size_of::<SqlError>()];
 
-        bytes[0] = discriminant_SqlError::OtherErr as u8;
+        bytes[0] = discriminant_SqlError::NotFound as u8;
 
         core::mem::transmute::<[u8; core::mem::size_of::<SqlError>()], SqlError>(bytes)
     };
@@ -168,9 +168,9 @@ impl SqlError {
         target_arch = "x86",
         target_arch = "x86_64"
     ))]
-    /// Other `into_` methods return a payload, but since the OtherErr tag
+    /// Other `into_` methods return a payload, but since the NotFound tag
     /// has no payload, this does nothing and is only here for completeness.
-    pub fn into_OtherErr(self) {
+    pub fn into_NotFound(self) {
         ()
     }
 
@@ -181,9 +181,9 @@ impl SqlError {
         target_arch = "x86",
         target_arch = "x86_64"
     ))]
-    /// Other `as` methods return a payload, but since the OtherErr tag
+    /// Other `as` methods return a payload, but since the NotFound tag
     /// has no payload, this does nothing and is only here for completeness.
-    pub unsafe fn as_OtherErr(&self) {
+    pub unsafe fn as_NotFound(&self) {
         ()
     }
 
@@ -241,7 +241,7 @@ impl Drop for SqlError {
     fn drop(&mut self) {
         // Drop the payloads
                     match self.discriminant() {
-                discriminant_SqlError::OtherErr => {}
+                discriminant_SqlError::NotFound => {}
                 discriminant_SqlError::QueryFailed => {}
             }
 
@@ -265,7 +265,7 @@ impl PartialEq for SqlError {
 
             unsafe {
             match self.discriminant() {
-                discriminant_SqlError::OtherErr => true,
+                discriminant_SqlError::NotFound => true,
                 discriminant_SqlError::QueryFailed => true,
             }
         }
@@ -288,7 +288,7 @@ impl PartialOrd for SqlError {
 
         unsafe {
             match self.discriminant() {
-                discriminant_SqlError::OtherErr => Some(core::cmp::Ordering::Equal),
+                discriminant_SqlError::NotFound => Some(core::cmp::Ordering::Equal),
                 discriminant_SqlError::QueryFailed => Some(core::cmp::Ordering::Equal),
             }
         }
@@ -311,7 +311,7 @@ impl Ord for SqlError {
 
             unsafe {
             match self.discriminant() {
-                discriminant_SqlError::OtherErr => core::cmp::Ordering::Equal,
+                discriminant_SqlError::NotFound => core::cmp::Ordering::Equal,
                 discriminant_SqlError::QueryFailed => core::cmp::Ordering::Equal,
             }
         }
@@ -331,7 +331,7 @@ impl Clone for SqlError {
     fn clone(&self) -> Self {
         let mut answer = unsafe {
             match self.discriminant() {
-                discriminant_SqlError::OtherErr => core::mem::transmute::<
+                discriminant_SqlError::NotFound => core::mem::transmute::<
                     core::mem::MaybeUninit<SqlError>,
                     SqlError,
                 >(core::mem::MaybeUninit::uninit()),
@@ -358,7 +358,7 @@ impl core::hash::Hash for SqlError {
         target_arch = "x86_64"
     ))]
     fn hash<H: core::hash::Hasher>(&self, state: &mut H) {        match self.discriminant() {
-            discriminant_SqlError::OtherErr => discriminant_SqlError::OtherErr.hash(state),
+            discriminant_SqlError::NotFound => discriminant_SqlError::NotFound.hash(state),
             discriminant_SqlError::QueryFailed => discriminant_SqlError::QueryFailed.hash(state),
         }
     }
@@ -377,7 +377,7 @@ impl core::fmt::Debug for SqlError {
 
         unsafe {
             match self.discriminant() {
-                discriminant_SqlError::OtherErr => f.write_str("OtherErr"),
+                discriminant_SqlError::NotFound => f.write_str("NotFound"),
                 discriminant_SqlError::QueryFailed => f.write_str("QueryFailed"),
             }
         }

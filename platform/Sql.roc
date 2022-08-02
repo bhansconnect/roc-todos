@@ -12,8 +12,6 @@ Data : [
 ]
 
 Error : [
-    # TODO: Distinguish no results from failure.
     QueryFailed,
-    # This is added to prevent a bindgen bug.
-    OtherErr,
+    NotFound,
 ]

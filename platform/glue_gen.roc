@@ -16,8 +16,7 @@ SqlData : [
 
 SqlError : [
     QueryFailed,
-    # This is added to prevent a bindgen bug.
-    OtherErr,
+    NotFound,
 ]
 
 

@@ -197,7 +197,10 @@ async fn root(
                         .fetch_one(&pool)
                         .await
                         .map(translate_row)
-                        .map_err(|_err| SqlError::QueryFailed);
+                        .map_err(|err| match err {
+                            sqlx::Error::RowNotFound => SqlError::NotFound,
+                            _ => SqlError::QueryFailed,
+                        });
                     let row = RocResult::from(row);
 
                     // Need to drop pointed to data that Roc returned to us.

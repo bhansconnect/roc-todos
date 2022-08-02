@@ -75,8 +75,10 @@ main = \baseUrl, req ->
                         Ok {title: _, completed: _} ->
                             # Either title or completed is None, this should be impossible.
                             Response {status: 500, body: "Loaded invalid TODO?", headers} |> always
-                        _ ->
-                            Response {status: 400, body: "", headers} |> always
+                        Err NotFound ->
+                            Response {status: 404, body: "", headers} |> always
+                        Err QueryFailed ->
+                            Response {status: 500, body: "", headers} |> always
                 _ ->
                     Response {status: 404, body: "", headers} |> always
         T Options _ ->
