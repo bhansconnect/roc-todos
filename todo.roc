@@ -59,19 +59,9 @@ main = \baseUrl, req ->
                     # todoResult <- fetchTodo 1
                     when todoResult is
                         Ok {url, title: Some title, completed: Some completed, itemOrder} ->
-                            completedStr =
-                                when completed is
-                                    True -> "true"
-                                    False -> "false"
-                            itemOrderStr =
-                                when itemOrder is
-                                    Some x ->
-                                        xStr = Num.toStr x
-                                        ", \"order\": \(xStr)"
-                                    None ->
-                                        ""
                             # TODO replace this with json encoding
-                            Response {status: 200, body: "{\"url\": \"\(url)\", \"title\": \"\(title)\", \"completed\": \(completedStr)\(itemOrderStr)}", headers} |> always
+                            body = writeTodo "" {url, title, completed, itemOrder}
+                            Response {status: 200, body, headers} |> always
                         Ok {title: _, completed: _} ->
                             # Either title or completed is None, this should be impossible.
                             Response {status: 500, body: "Loaded invalid TODO?", headers} |> always
@@ -87,6 +77,26 @@ main = \baseUrl, req ->
             Response {status: 204, body: "", headers} |> always
         _ ->
             Response {status: 404, body: "", headers} |> always
+
+writeTodo = \buf0, {url, title, completed, itemOrder} ->
+    completedStr =
+        when completed is
+            True -> "true"
+            False -> "false"
+    buf1 = Str.concat buf0 "{\"url\": \""
+    buf2 = Str.concat buf1 url
+    buf3 = Str.concat buf2 "\", \"title\": \""
+    buf4 = Str.concat buf3 title
+    buf5 = Str.concat buf4 "\", \"completed\": "
+    buf6 = Str.concat buf5 completedStr
+    when itemOrder is
+        Some x ->
+            xStr = Num.toStr x
+            buf7 = Str.concat buf6 ", \"order\": "
+            buf8 = Str.concat buf7 xStr
+            Str.concat buf8 "}"
+        None ->
+            Str.concat buf6 "}"
 
 # Some reason I can't pull this out into another function.
 # Type checking fails despite printing a matching type.
