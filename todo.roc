@@ -3,9 +3,6 @@ app "todo"
     imports [pf.Effect.{Effect, always, after}]
     provides [main] to pf
 
-dbFetchOne = \str, params, cont ->
-    DBFetchOne str params cont |> always
-
 # Spec
 # Get / -> Load all todos as a json
 # Post / -> create todo from json
@@ -30,8 +27,61 @@ main = \baseUrl, req ->
     route = List.get pathList 1
     when T method route is
         T Get (Ok "") ->
-            # TODO: return list of TODOs as json
-            Response {status: 200, body: "[]", headers} |> always
+            rowsResult <- dbFetchAll "SELECT id, title, completed, item_order FROM todos" []
+            # TODO: Change all of this to use json encoding.
+            todosResult = Result.map rowsResult \rows ->
+                todoRows =
+                    row <- List.map rows
+                    id =
+                        when List.get row 0 is
+                            Ok (Int i) ->
+                                Some i
+                            _ ->
+                                None
+                    title =
+                        when List.get row 1 is
+                            Ok (Text t) ->
+                                Some t
+                            _ ->
+                                None
+                    completed =
+                        when List.get row 2 is
+                            Ok (Boolean b) ->
+                                Some b
+                            _ ->
+                                None
+                    itemOrder =
+                        when List.get row 3 is
+                            Ok (Int i) ->
+                                Some i
+                            _ ->
+                                None
+                    {id, title, completed, itemOrder}
+                optionalBody =
+                    {first, optionalBuf}, todo <- List.walkUntil todoRows {first: True, optionalBuf: (Some "[")}
+                    when T optionalBuf todo is
+                        T (Some buf) {id: Some id, title: Some title, completed: Some completed, itemOrder} ->
+                            idStr = Num.toStr id
+                            url =  "\(baseUrl)/\(idStr)"
+                            nextBuf =
+                                if first then
+                                    writeTodo buf {url, title, completed, itemOrder}
+                                else
+                                    Str.concat buf ", "
+                                        |> writeTodo {url, title, completed, itemOrder}
+                            Continue {first: False, optionalBuf: Some nextBuf}
+                        _ ->
+                            Break {first, optionalBuf: None}
+                when optionalBody is
+                    {optionalBuf: Some body} -> Some (Str.concat body "]")
+                    {optionalBuf: None} -> None
+
+            when todosResult is
+                Ok (Some body) ->
+                    Response {status: 200, body, headers} |> always
+                _ ->
+                    Response {status: 500, body: "", headers} |> always
+
         T Get (Ok idStr) ->
             when Str.toI64 idStr is
                 Ok id ->
@@ -131,4 +181,9 @@ writeTodo = \buf0, {url, title, completed, itemOrder} ->
 #             Err _ ->
 #                 Err QueryError
 #     todoCont out
-    
+
+dbFetchAll = \str, params, cont ->
+    DBFetchAll str params cont |> always
+
+dbFetchOne = \str, params, cont ->
+    DBFetchOne str params cont |> always

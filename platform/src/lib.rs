@@ -32,6 +32,16 @@ extern "C" {
     #[link_name = "roc__mainForHost_1__Continuation_result_size"]
     fn call_Continuation_result_size() -> usize;
 
+    #[link_name = "roc__mainForHost_1__DBFetchAllCont_caller"]
+    fn call_DBFetchAllCont(
+        flags: *const RocResult<RocList<RocList<SqlData>>, SqlError>,
+        closure_data: *const u8,
+        output: *mut usize,
+    );
+
+    #[link_name = "roc__mainForHost_1__DBFetchAllCont_result_size"]
+    fn call_DBFetchAllCont_result_size() -> usize;
+
     #[link_name = "roc__mainForHost_1__DBFetchOneCont_caller"]
     fn call_DBFetchOneCont(
         flags: *const RocResult<RocList<SqlData>, SqlError>,
@@ -181,6 +191,33 @@ async fn root(
         loop {
             match get_tag(cont_ptr) {
                 0 => {
+                    // DBFetchAll
+                    let untagged_ptr = remove_tag(cont_ptr);
+                    let query_ptr = untagged_ptr;
+                    let bind_params_ptr = untagged_ptr + std::mem::size_of::<RocStr>();
+
+                    let mut query = sqlx::query((&*(query_ptr as *const RocStr)).as_str());
+                    for data in (&*(bind_params_ptr as *const RocList<SqlData>)).iter() {
+                        match data.discriminant() {
+                            discriminant_SqlData::Int => query = query.bind(data.as_Int()),
+                            x => todo!("Bind param type: {:?}", x),
+                        }
+                    }
+                    let rows = query
+                        .fetch_all(&pool)
+                        .await
+                        .map(|list| RocList::from_iter(list.into_iter().map(translate_row)))
+                        .map_err(|err| match dbg!(err) {
+                            _ => SqlError::QueryFailed,
+                        });
+                    let rows = RocResult::from(rows);
+
+                    // Need to drop pointed to data that Roc returned to us.
+                    std::ptr::drop_in_place(query_ptr as *mut RocStr);
+                    std::ptr::drop_in_place(bind_params_ptr as *mut RocList<SqlData>);
+                    cont_ptr = call_DBFetchAllCont_closure(cont_ptr, rows);
+                }
+                1 => {
                     // DBFetchOne
                     let untagged_ptr = remove_tag(cont_ptr);
                     let query_ptr = untagged_ptr;
@@ -208,7 +245,7 @@ async fn root(
                     std::ptr::drop_in_place(bind_params_ptr as *mut RocList<SqlData>);
                     cont_ptr = call_DBFetchOneCont_closure(cont_ptr, row);
                 }
-                1 => {
+                2 => {
                     // LoadBody
                     // We steal the body and replace it with an empty body.
                     // Future calls to this method will get an empty string.
@@ -220,7 +257,7 @@ async fn root(
                     };
                     cont_ptr = call_LoadBodyCont_closure(cont_ptr, result);
                 }
-                2 => {
+                3 => {
                     // Response
                     let out_ptr = remove_tag(cont_ptr) as *mut RocResponse;
                     *resp.status_mut() = StatusCode::from_u16((&*out_ptr).status)
@@ -257,6 +294,25 @@ async fn root(
     }
 
     Ok(resp)
+}
+
+unsafe fn call_DBFetchAllCont_closure(
+    args_and_data_ptr: usize,
+    rows: RocResult<RocList<RocList<SqlData>>, SqlError>,
+) -> usize {
+    let closure_data_ptr = remove_tag(
+        args_and_data_ptr
+            + std::mem::size_of::<RocStr>()
+            + std::mem::size_of::<RocList<RocList<SqlData>>>(),
+    );
+    let mut cont_ptr: usize = 0;
+
+    call_DBFetchAllCont(&rows, closure_data_ptr as *const u8, &mut cont_ptr);
+    deallocate_refcounted_tag(args_and_data_ptr);
+
+    std::mem::forget(rows);
+
+    cont_ptr
 }
 
 unsafe fn call_DBFetchOneCont_closure(
@@ -297,6 +353,7 @@ pub extern "C" fn rust_main() -> i32 {
         unsafe { call_Continuation_result_size() },
         std::mem::size_of::<*const c_void>()
     );
+    assert!(unsafe { call_DBFetchAllCont_result_size() } <= std::mem::size_of::<*const c_void>());
     assert!(unsafe { call_DBFetchOneCont_result_size() } <= std::mem::size_of::<*const c_void>());
     assert!(unsafe { call_LoadBodyCont_result_size() } <= std::mem::size_of::<*const c_void>());
     unsafe {

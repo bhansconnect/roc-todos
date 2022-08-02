@@ -9,6 +9,7 @@ Header : {k: Str, v: Str}
 
 mainForHost : Str, Request -> Effect
     [
+        DBFetchAll Str (List Sql.Data) ((Result (List (List Sql.Data)) Sql.Error -> Effect Continuation) as DBFetchAllCont),
         DBFetchOne Str (List Sql.Data) ((Result (List Sql.Data) Sql.Error -> Effect Continuation) as DBFetchOneCont),
         LoadBody ((Result Str {} -> Effect Continuation) as LoadBodyCont),
         Response { body: Str, headers: List Header, status: U16 }
