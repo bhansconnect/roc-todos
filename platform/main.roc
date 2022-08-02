@@ -9,6 +9,7 @@ Header : {k: Str, v: Str}
 
 mainForHost : Str, Request -> Effect
     [
+        DBExecute Str (List Sql.Data) ((Result Sql.ExecuteResult Sql.Error -> Effect Continuation) as DBExecuteCont),
         DBFetchAll Str (List Sql.Data) ((Result (List (List Sql.Data)) Sql.Error -> Effect Continuation) as DBFetchAllCont),
         DBFetchOne Str (List Sql.Data) ((Result (List Sql.Data) Sql.Error -> Effect Continuation) as DBFetchOneCont),
         LoadBody ((Result Str {} -> Effect Continuation) as LoadBodyCont),

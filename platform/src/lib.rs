@@ -8,7 +8,7 @@ use std::os::raw::c_char;
 use hyper::header::HeaderValue;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Method, Request, Response, Server, StatusCode};
-use sqlx::sqlite::{SqlitePool, SqlitePoolOptions, SqliteRow};
+use sqlx::sqlite::{SqlitePool, SqlitePoolOptions, SqliteQueryResult, SqliteRow};
 use sqlx::{Column, Row, TypeInfo};
 use tokio::runtime::Runtime;
 
@@ -31,6 +31,16 @@ extern "C" {
 
     #[link_name = "roc__mainForHost_1__Continuation_result_size"]
     fn call_Continuation_result_size() -> usize;
+
+    #[link_name = "roc__mainForHost_1__DBExecuteCont_caller"]
+    fn call_DBExecuteCont(
+        flags: *const RocResult<RocExecuteResult, SqlError>,
+        closure_data: *const u8,
+        output: *mut usize,
+    );
+
+    #[link_name = "roc__mainForHost_1__DBExecuteCont_result_size"]
+    fn call_DBExecuteCont_result_size() -> usize;
 
     #[link_name = "roc__mainForHost_1__DBFetchAllCont_caller"]
     fn call_DBFetchAllCont(
@@ -127,12 +137,21 @@ pub unsafe extern "C" fn roc_memset(dst: *mut c_void, c: i32, n: usize) -> *mut 
 }
 
 #[repr(C)]
+#[derive(Debug)]
+struct RocExecuteResult {
+    last_insert_rowid: i64,
+    rows_affected: u64,
+}
+
+#[repr(C)]
+#[derive(Debug)]
 struct RocHeader {
     k: RocStr,
     v: RocStr,
 }
 
 #[repr(C)]
+#[derive(Debug)]
 struct RocResponse {
     body: RocStr,
     headers: RocList<RocHeader>,
@@ -191,6 +210,36 @@ async fn root(
         loop {
             match get_tag(cont_ptr) {
                 0 => {
+                    // DBExecute
+                    let untagged_ptr = remove_tag(cont_ptr);
+                    let query_ptr = untagged_ptr;
+                    let bind_params_ptr = untagged_ptr + std::mem::size_of::<RocStr>();
+
+                    let mut query = sqlx::query((&*(query_ptr as *const RocStr)).as_str());
+                    for data in (&*(bind_params_ptr as *const RocList<SqlData>)).iter() {
+                        match data.discriminant() {
+                            discriminant_SqlData::Int => query = query.bind(data.as_Int()),
+                            x => todo!("Bind param type: {:?}", x),
+                        }
+                    }
+                    let result = query
+                        .execute(&pool)
+                        .await
+                        .map(|x: SqliteQueryResult| RocExecuteResult {
+                            last_insert_rowid: x.last_insert_rowid(),
+                            rows_affected: x.rows_affected(),
+                        })
+                        .map_err(|err| match dbg!(err) {
+                            _ => SqlError::QueryFailed,
+                        });
+                    let result = RocResult::from(result);
+
+                    // Need to drop pointed to data that Roc returned to us.
+                    std::ptr::drop_in_place(query_ptr as *mut RocStr);
+                    std::ptr::drop_in_place(bind_params_ptr as *mut RocList<SqlData>);
+                    cont_ptr = call_DBExecuteCont_closure(cont_ptr, result);
+                }
+                1 => {
                     // DBFetchAll
                     let untagged_ptr = remove_tag(cont_ptr);
                     let query_ptr = untagged_ptr;
@@ -217,7 +266,7 @@ async fn root(
                     std::ptr::drop_in_place(bind_params_ptr as *mut RocList<SqlData>);
                     cont_ptr = call_DBFetchAllCont_closure(cont_ptr, rows);
                 }
-                1 => {
+                2 => {
                     // DBFetchOne
                     let untagged_ptr = remove_tag(cont_ptr);
                     let query_ptr = untagged_ptr;
@@ -245,7 +294,7 @@ async fn root(
                     std::ptr::drop_in_place(bind_params_ptr as *mut RocList<SqlData>);
                     cont_ptr = call_DBFetchOneCont_closure(cont_ptr, row);
                 }
-                2 => {
+                3 => {
                     // LoadBody
                     // We steal the body and replace it with an empty body.
                     // Future calls to this method will get an empty string.
@@ -257,7 +306,7 @@ async fn root(
                     };
                     cont_ptr = call_LoadBodyCont_closure(cont_ptr, result);
                 }
-                3 => {
+                4 => {
                     // Response
                     let out_ptr = remove_tag(cont_ptr) as *mut RocResponse;
                     *resp.status_mut() = StatusCode::from_u16((&*out_ptr).status)
@@ -294,6 +343,25 @@ async fn root(
     }
 
     Ok(resp)
+}
+
+unsafe fn call_DBExecuteCont_closure(
+    args_and_data_ptr: usize,
+    result: RocResult<RocExecuteResult, SqlError>,
+) -> usize {
+    let closure_data_ptr = remove_tag(
+        args_and_data_ptr
+            + std::mem::size_of::<RocStr>()
+            + std::mem::size_of::<RocList<RocList<SqlData>>>(),
+    );
+    let mut cont_ptr: usize = 0;
+
+    call_DBExecuteCont(&result, closure_data_ptr as *const u8, &mut cont_ptr);
+    deallocate_refcounted_tag(args_and_data_ptr);
+
+    std::mem::forget(result);
+
+    cont_ptr
 }
 
 unsafe fn call_DBFetchAllCont_closure(
@@ -353,6 +421,7 @@ pub extern "C" fn rust_main() -> i32 {
         unsafe { call_Continuation_result_size() },
         std::mem::size_of::<*const c_void>()
     );
+    assert!(unsafe { call_DBExecuteCont_result_size() } <= std::mem::size_of::<*const c_void>());
     assert!(unsafe { call_DBFetchAllCont_result_size() } <= std::mem::size_of::<*const c_void>());
     assert!(unsafe { call_DBFetchOneCont_result_size() } <= std::mem::size_of::<*const c_void>());
     assert!(unsafe { call_LoadBodyCont_result_size() } <= std::mem::size_of::<*const c_void>());

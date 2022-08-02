@@ -1,5 +1,5 @@
 interface Sql
-    exposes [Data, Error]
+    exposes [Data, Error, ExecuteResult]
     imports []
 
 Data : [
@@ -15,3 +15,8 @@ Error : [
     QueryFailed,
     NotFound,
 ]
+
+ExecuteResult : {
+    lastInsertRowId: I64,
+    rowsAffected: U64,
+}

@@ -18,14 +18,25 @@ main = \baseUrl, req ->
     headers = [
         {k: "Access-Control-Allow-Origin", v: "*"},
         {k: "Access-Control-Allow-Headers", v: "Content-Type"},
-        # {k: "Access-Control-Allow-Private-Network", v: "true"},
+        {k: "Access-Control-Allow-Methods", v: "OPTIONS, GET, POST, PATCH, DELETE"},
+        {k: "Access-Control-Allow-Private-Network", v: "true"},
         {k: "Content-Type", v: "application/json"},
-        {k: "Access-Control-Request-Method", v: "OPTIONS, GET, POST, PATCH, DELETE"},
         {k: "Server", v: "Roc-Hyper"},
     ]
     # There is always a starting "/" so we ignore the first element of pathList (always "")
     route = List.get pathList 1
     when T method route is
+        T Post (Ok "") ->
+            # TODO: decode json body, insert, and return created todo.
+            Response {status: 500, body: "", headers} |> always
+        T Delete (Ok "") ->
+            result <- dbExecute "DELETE FROM todos" []
+            when result is
+                Ok _ ->
+                    Response {status: 200, body: "", headers} |> always
+                Err _ ->
+                    Response {status: 500, body: "", headers} |> always
+
         T Get (Ok "") ->
             rowsResult <- dbFetchAll "SELECT id, title, completed, item_order FROM todos" []
             # TODO: Change all of this to use json encoding.
@@ -181,6 +192,9 @@ writeTodo = \buf0, {url, title, completed, itemOrder} ->
 #             Err _ ->
 #                 Err QueryError
 #     todoCont out
+
+dbExecute = \str, params, cont ->
+    DBExecute str params cont |> always
 
 dbFetchAll = \str, params, cont ->
     DBFetchAll str params cont |> always
