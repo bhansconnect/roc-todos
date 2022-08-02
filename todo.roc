@@ -55,7 +55,7 @@ main = \baseUrl, req ->
                                     Some i
                                 _ ->
                                     None
-                        {url: "\(baseUrl)/(idStr)", title, completed, itemOrder}
+                        {url: "\(baseUrl)/\(idStr)", title, completed, itemOrder}
                     # todoResult <- fetchTodo 1
                     when todoResult is
                         Ok {url, title: Some title, completed: Some completed, itemOrder} ->
@@ -67,11 +67,11 @@ main = \baseUrl, req ->
                                 when itemOrder is
                                     Some x ->
                                         xStr = Num.toStr x
-                                        ", order: \(xStr)"
+                                        ", \"order\": \(xStr)"
                                     None ->
                                         ""
                             # TODO replace this with json encoding
-                            Response {status: 200, body: "{url: \(url), title: \(title), completed: \(completedStr)\(itemOrderStr)}", headers} |> always
+                            Response {status: 200, body: "{\"url\": \"\(url)\", \"title\": \"\(title)\", \"completed\": \(completedStr)\(itemOrderStr)}", headers} |> always
                         Ok {title: _, completed: _} ->
                             # Either title or completed is None, this should be impossible.
                             Response {status: 500, body: "Loaded invalid TODO?", headers} |> always
