@@ -229,7 +229,7 @@ async fn root(
                             last_insert_rowid: x.last_insert_rowid(),
                             rows_affected: x.rows_affected(),
                         })
-                        .map_err(|err| match dbg!(err) {
+                        .map_err(|err| match err {
                             _ => SqlError::QueryFailed,
                         });
                     let result = RocResult::from(result);
@@ -256,7 +256,7 @@ async fn root(
                         .fetch_all(&pool)
                         .await
                         .map(|list| RocList::from_iter(list.into_iter().map(translate_row)))
-                        .map_err(|err| match dbg!(err) {
+                        .map_err(|err| match err {
                             _ => SqlError::QueryFailed,
                         });
                     let rows = RocResult::from(rows);

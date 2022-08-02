@@ -27,8 +27,13 @@ main = \baseUrl, req ->
     route = List.get pathList 1
     when T method route is
         T Post (Ok "") ->
-            # TODO: decode json body, insert, and return created todo.
-            Response {status: 500, body: "", headers} |> always
+            result <- loadBody
+            when result is
+                Ok body ->
+                    # TODO: decode json body, insert, and return created todo.
+                    Response {status: 200, body, headers} |> always
+                Err _ ->
+                    Response {status: 500, body: "", headers} |> always
         T Delete (Ok "") ->
             result <- dbExecute "DELETE FROM todos" []
             when result is
@@ -211,3 +216,6 @@ dbFetchAll = \str, params, cont ->
 
 dbFetchOne = \str, params, cont ->
     DBFetchOne str params cont |> always
+
+loadBody = \cont ->
+    LoadBody cont |> always
