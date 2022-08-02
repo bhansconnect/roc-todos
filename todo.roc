@@ -36,7 +36,6 @@ main = \baseUrl, req ->
                     Response {status: 200, body: "", headers} |> always
                 Err _ ->
                     Response {status: 500, body: "", headers} |> always
-
         T Get (Ok "") ->
             rowsResult <- dbFetchAll "SELECT id, title, completed, item_order FROM todos" []
             # TODO: Change all of this to use json encoding.
@@ -86,13 +85,24 @@ main = \baseUrl, req ->
                 when optionalBody is
                     {optionalBuf: Some body} -> Some (Str.concat body "]")
                     {optionalBuf: None} -> None
-
             when todosResult is
                 Ok (Some body) ->
                     Response {status: 200, body, headers} |> always
                 _ ->
                     Response {status: 500, body: "", headers} |> always
-
+        T Delete (Ok idStr) ->
+            when Str.toI64 idStr is
+                Ok id ->
+                    result <- dbExecute "DELETE FROM todos WHERE id = ?1" [Int id]
+                    when result is
+                        Ok {rowsAffected: 1} ->
+                            Response {status: 200, body: "", headers} |> always
+                        Ok _ ->
+                            Response {status: 400, body: "", headers} |> always
+                        Err _ ->
+                            Response {status: 500, body: "", headers} |> always
+                _ ->
+                    Response {status: 400, body: "", headers} |> always
         T Get (Ok idStr) ->
             when Str.toI64 idStr is
                 Ok id ->
