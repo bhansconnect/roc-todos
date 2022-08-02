@@ -27,10 +27,10 @@ main = \baseUrl, req ->
     route = List.get pathList 1
     when T method route is
         T Post (Ok "") ->
+            # TODO: Make this not terrible
             result <- loadBody
             when result is
                 Ok body ->
-                    # TODO: decode json body, insert, and return created todo.
                     kvsResult =
                         {after: bodyAfter} <- Result.try (Str.splitFirst body "{")
                         # This works around a bug with Str.splitLast
@@ -60,9 +60,18 @@ main = \baseUrl, req ->
                                 afterWithSpace = Str.concat titleAfter " "
                                 {before} <- Result.map (Str.splitLast afterWithSpace "\"")
                                 before
+                            orderResult =
+                                orderStr <- Result.try (Dict.get kvs "\"order\"") 
+                                Str.toI64 orderStr
+                            order =
+                                when orderResult is
+                                    Ok i ->
+                                        Int i
+                                    Err _ ->
+                                        Null
                             when titleResult is
                                 Ok title ->
-                                    insertResult <- dbExecute "INSERT INTO todos (title) VALUES (?1)" [Text title]
+                                    insertResult <- dbExecute "INSERT INTO todos (title, item_order) VALUES (?1, ?2)" [Text title, order]
                                     when insertResult is
                                         Ok {lastInsertRowId: id} ->
                                             rowResult <- dbFetchOne "SELECT title, completed, item_order FROM todos WHERE id = ?1" [Int id]

@@ -222,6 +222,10 @@ async fn root(
                             discriminant_SqlData::Text => {
                                 query = query.bind(data.as_Text().as_str())
                             }
+                            discriminant_SqlData::Null => {
+                                let option: Option<i64> = None;
+                                query = query.bind(option);
+                            }
                             x => todo!("Bind param type: {:?}", x),
                         }
                     }
@@ -255,6 +259,10 @@ async fn root(
                             discriminant_SqlData::Text => {
                                 query = query.bind(data.as_Text().as_str())
                             }
+                            discriminant_SqlData::Null => {
+                                let option: Option<i64> = None;
+                                query = query.bind(option);
+                            }
                             x => todo!("Bind param type: {:?}", x),
                         }
                     }
@@ -284,6 +292,10 @@ async fn root(
                             discriminant_SqlData::Int => query = query.bind(data.as_Int()),
                             discriminant_SqlData::Text => {
                                 query = query.bind(data.as_Text().as_str())
+                            }
+                            discriminant_SqlData::Null => {
+                                let option: Option<i64> = None;
+                                query = query.bind(option);
                             }
                             x => todo!("Bind param type: {:?}", x),
                         }
