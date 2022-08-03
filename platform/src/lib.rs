@@ -472,7 +472,14 @@ pub extern "C" fn rust_main() -> i32 {
                     .expect("failed to load BASE_URL environment variable")
                     .as_str(),
             );
+            // More hacks to make sure we don't end up freing this str.
+            // Some reason roc_std doesn't expose anything related to refounts.
             let base_url_ptr = (&base_url as *const RocStr) as usize;
+            if base_url.len() >= 24 {
+                let refcount_ptr = (base_url_ptr as *mut i64).sub(1);
+                // 0 is infinite refcount.
+                *refcount_ptr = 0;
+            }
             // We are just gonna leak this. It needs to live the entire application anyway.
             std::mem::forget(base_url);
 
