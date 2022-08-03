@@ -31,81 +31,30 @@ main = \baseUrl, req ->
             result <- loadBody
             when result is
                 Ok body ->
-                    kvsResult =
-                        {after: bodyAfter} <- Result.try (Str.splitFirst body "{")
-                        # This works around a bug with Str.splitLast
-                        afterWithSpace = Str.concat bodyAfter " "
-                        {before} <- Result.try (Str.splitLast afterWithSpace "}")
-                        kvsList =
-                            kvPair <- List.map (Str.split before ",")
-                            {before: key, after: value} <- Result.map (Str.splitLast kvPair ":")
-                            T (Str.trim key) (Str.trim value)
-                        resultDict, kvResult <-List.walkUntil kvsList (Ok Dict.empty)
-                        when T resultDict kvResult is
-                            T (Ok dict) (Ok (T k v)) ->
-                                Continue (Ok (Dict.insert dict k v))
-                            T _ (Err e) ->
-                                Break (Err e)
-                            T (Err e) _ ->
-                                Break (Err e)
-                            _ ->
-                                Break (Err HowDidIGetHere)
-
-                    when kvsResult is
+                    when loadJsonKVs body is
                         Ok kvs ->
-                            titleResult =
-                                title <- Result.try (Dict.get kvs "\"title\"") 
-                                {after: titleAfter} <- Result.try (Str.splitFirst title "\"")
-                                # This works around a bug with Str.splitLast
-                                afterWithSpace = Str.concat titleAfter " "
-                                {before} <- Result.map (Str.splitLast afterWithSpace "\"")
-                                before
-                            orderResult =
-                                orderStr <- Result.try (Dict.get kvs "\"order\"") 
-                                Str.toI64 orderStr
                             order =
-                                when orderResult is
+                                when loadJsonI64Value kvs "order" is
                                     Ok i ->
                                         Int i
                                     Err _ ->
                                         Null
-                            when titleResult is
+                            when loadJsonStringValue kvs "title" is
                                 Ok title ->
                                     insertResult <- dbExecute "INSERT INTO todos (title, item_order) VALUES (?1, ?2)" [Text title, order]
                                     when insertResult is
                                         Ok {lastInsertRowId: id} ->
-                                            rowResult <- dbFetchOne "SELECT title, completed, item_order FROM todos WHERE id = ?1" [Int id]
-                                            todoResult = Result.map rowResult \row ->
-                                                loadedTitle =
-                                                    when List.get row 0 is
-                                                        Ok (Text t) ->
-                                                            Some t
-                                                        _ ->
-                                                            None
-                                                completed =
-                                                    when List.get row 1 is
-                                                        Ok (Boolean b) ->
-                                                            Some b
-                                                        _ ->
-                                                            None
-                                                itemOrder =
-                                                    when List.get row 2 is
-                                                        Ok (Int i) ->
-                                                            Some i
-                                                        _ ->
-                                                            None
-                                                idStr = Num.toStr id
-                                                {url: "\(baseUrl)/\(idStr)", title: loadedTitle, completed, itemOrder}
-                                            when todoResult is
-                                                Ok {url, title: Some loadedTitle, completed: Some completed, itemOrder} ->
-                                                    # TODO replace this with json encoding
-                                                    todoStr = writeTodo "" {url, title: loadedTitle, completed, itemOrder}
-                                                    Response {status: 200, body: todoStr, headers} |> always
-                                                Ok {title: _, completed: _} ->
-                                                    # Either title or completed is None, this should be impossible.
-                                                    Response {status: 500, body: "Loaded invalid TODO?", headers} |> always
-                                                Err _ ->
-                                                    Response {status: 500, body: "", headers} |> always
+                                            rowResult <- dbFetchOne "SELECT id, title, completed, item_order FROM todos WHERE id = ?1" [Int id]
+                                            rowResultHttp = mapErrToHttp rowResult headers 500
+                                            resultHttp =
+                                                row <- Result.try rowResultHttp
+                                                todoResult = loadRowToTodo row baseUrl
+                                                todoResultHttp = mapErrToHttp todoResult headers 500
+                                                todo <- Result.map todoResultHttp
+                                                # TODO replace this with json encoding
+                                                todoStr = writeTodo "" todo
+                                                {status: 200, body: todoStr, headers}
+                                            mergeResult resultHttp |> Response |> always
                                         Err _ ->
                                             Response {status: 500, body: "", headers} |> always
                                 Err _ ->
@@ -253,6 +202,86 @@ writeTodo = \buf0, {url, title, completed, itemOrder} ->
             Str.concat buf8 "}"
         None ->
             Str.concat buf6 "}"
+
+loadJsonKVs = \body ->
+    {after: bodyAfter} <- Result.try (Str.splitFirst body "{")
+    # This works around a bug with Str.splitLast
+    afterWithSpace = Str.concat bodyAfter " "
+    {before} <- Result.try (Str.splitLast afterWithSpace "}")
+    kvsList =
+        kvPair <- List.map (Str.split before ",")
+        {before: key, after: value} <- Result.map (Str.splitLast kvPair ":")
+        T (Str.trim key) (Str.trim value)
+    resultDict, kvResult <-List.walkUntil kvsList (Ok Dict.empty)
+    when T resultDict kvResult is
+        T (Ok dict) (Ok (T k v)) ->
+            Continue (Ok (Dict.insert dict k v))
+        T _ (Err e) ->
+            Break (Err e)
+        T (Err e) _ ->
+            Break (Err e)
+        _ ->
+            Break (Err HowDidIGetHere)
+
+mapErrToHttp : Result a b, List {k: Str, v: Str}, U16 -> Result a {status: U16, body: Str, headers: List {k: Str, v: Str}}
+mapErrToHttp = \result, headers, status ->
+    when result is
+        Ok v -> Ok v
+        Err _ ->
+            Err {status, body: "", headers}
+
+
+mergeResult : Result a a -> a
+mergeResult = \result ->
+    when result is
+        Ok v -> v
+        Err v -> v
+
+loadJsonI64Value = \kvs, key ->
+    valStr <- Result.try (Dict.get kvs "\"\(key)\"") 
+    Str.toI64 valStr
+
+loadJsonStringValue = \kvs, key ->
+    val <- Result.try (Dict.get kvs "\"\(key)\"") 
+    {after: valAfter} <- Result.try (Str.splitFirst val "\"")
+    # This works around a bug with Str.splitLast
+    afterWithSpace = Str.concat valAfter " "
+    {before} <- Result.map (Str.splitLast afterWithSpace "\"")
+    before
+
+# Since I can't put a query in a function (yay bugs!), just process the result in a function.
+loadRowToTodo = \row, baseUrl ->
+    optionId =
+        when List.get row 0 is
+            Ok (Int i) ->
+                Some i
+            _ ->
+                None
+    optionTitle =
+        when List.get row 1 is
+            Ok (Text t) ->
+                Some t
+            _ ->
+                None
+    optionCompleted =
+        when List.get row 2 is
+            Ok (Boolean b) ->
+                Some b
+            _ ->
+                None
+    itemOrder =
+        when List.get row 3 is
+            Ok (Int i) ->
+                Some i
+            _ ->
+                None
+    when T optionId optionTitle optionCompleted is
+        T (Some id) (Some title) (Some completed) ->
+            idStr = Num.toStr id
+            url =  "\(baseUrl)/\(idStr)"
+            Ok {url, title, completed, itemOrder}
+        _ ->
+            Err InvalidTodo
 
 # Some reason I can't pull this out into another function.
 # Type checking fails despite printing a matching type.
