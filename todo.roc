@@ -76,37 +76,11 @@ main = \baseUrl, req ->
             todosResult = Result.map rowsResult \rows ->
                 todoRows =
                     row <- List.map rows
-                    id =
-                        when List.get row 0 is
-                            Ok (Int i) ->
-                                Some i
-                            _ ->
-                                None
-                    title =
-                        when List.get row 1 is
-                            Ok (Text t) ->
-                                Some t
-                            _ ->
-                                None
-                    completed =
-                        when List.get row 2 is
-                            Ok (Boolean b) ->
-                                Some b
-                            _ ->
-                                None
-                    itemOrder =
-                        when List.get row 3 is
-                            Ok (Int i) ->
-                                Some i
-                            _ ->
-                                None
-                    {id, title, completed, itemOrder}
+                    loadRowToTodo row baseUrl
                 optionalBody =
                     {first, optionalBuf}, todo <- List.walkUntil todoRows {first: True, optionalBuf: (Some "[")}
                     when T optionalBuf todo is
-                        T (Some buf) {id: Some id, title: Some title, completed: Some completed, itemOrder} ->
-                            idStr = Num.toStr id
-                            url =  "\(baseUrl)/\(idStr)"
+                        T (Some buf) (Ok {url, title, completed, itemOrder}) ->
                             nextBuf =
                                 if first then
                                     writeTodo buf {url, title, completed, itemOrder}
