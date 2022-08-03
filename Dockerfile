@@ -13,4 +13,5 @@ WORKDIR /app/
 COPY --from=builder /app/.env ./
 COPY --from=builder /app/todos.db ./
 COPY todos ./
+EXPOSE 3000
 CMD ["./todos"]
