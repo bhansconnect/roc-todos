@@ -140,40 +140,21 @@ main = \baseUrl, req ->
         T Get (Ok idStr) ->
             when Str.toI64 idStr is
                 Ok id ->
-                    rowResult <- dbFetchOne "SELECT title, completed, item_order FROM todos WHERE id = ?1" [Int id]
-                    todoResult = Result.map rowResult \row ->
-                        title =
-                            when List.get row 0 is
-                                Ok (Text t) ->
-                                    Some t
-                                _ ->
-                                    None
-                        completed =
-                            when List.get row 1 is
-                                Ok (Boolean b) ->
-                                    Some b
-                                _ ->
-                                    None
-                        itemOrder =
-                            when List.get row 2 is
-                                Ok (Int i) ->
-                                    Some i
-                                _ ->
-                                    None
-                        {url: "\(baseUrl)/\(idStr)", title, completed, itemOrder}
-                    # todoResult <- fetchTodo 1
-                    when todoResult is
-                        Ok {url, title: Some title, completed: Some completed, itemOrder} ->
-                            # TODO replace this with json encoding
-                            body = writeTodo "" {url, title, completed, itemOrder}
-                            Response {status: 200, body, headers} |> always
-                        Ok {title: _, completed: _} ->
-                            # Either title or completed is None, this should be impossible.
-                            Response {status: 500, body: "Loaded invalid TODO?", headers} |> always
-                        Err NotFound ->
-                            Response {status: 404, body: "", headers} |> always
-                        Err QueryFailed ->
-                            Response {status: 500, body: "", headers} |> always
+                    rowResult <- dbFetchOne "SELECT id, title, completed, item_order FROM todos WHERE id = ?1" [Int id]
+                    rowResultHttp =
+                        when rowResult is
+                            Ok v -> Ok v
+                            Err NotFound -> Err {status: 404, body: "", headers}
+                            Err _ -> Err {status: 500, body: "", headers}
+                    resultHttp =
+                        row <- Result.try rowResultHttp
+                        todoResult = loadRowToTodo row baseUrl
+                        todoResultHttp = mapErrToHttp todoResult headers 500
+                        todo <- Result.map todoResultHttp
+                        # TODO replace this with json encoding
+                        todoStr = writeTodo "" todo
+                        {status: 200, body: todoStr, headers}
+                    mergeResult resultHttp |> Response |> always
                 _ ->
                     Response {status: 404, body: "", headers} |> always
         T Options _ ->
