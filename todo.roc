@@ -53,8 +53,8 @@ main = \baseUrl, req ->
                                                 todo <- Result.map todoResultHttp
                                                 # TODO replace this with json encoding
                                                 todoStr = writeTodo "" todo
-                                                {status: 200, body: todoStr, headers}
-                                            mergeResult resultHttp |> Response |> always
+                                                Response {status: 200, body: todoStr, headers}
+                                            mergeResult resultHttp |> always
                                         Err _ ->
                                             Response {status: 500, body: "", headers} |> always
                                 Err _ ->
@@ -111,6 +111,12 @@ main = \baseUrl, req ->
                             Response {status: 500, body: "", headers} |> always
                 _ ->
                     Response {status: 400, body: "", headers} |> always
+        T Patch (Ok idStr) ->
+            when Str.toI64 idStr is
+                Ok _id ->
+                    Response {status: 400, body: idStr, headers} |> always
+                _ ->
+                    Response {status: 400, body: "", headers} |> always
         T Get (Ok idStr) ->
             when Str.toI64 idStr is
                 Ok id ->
@@ -118,8 +124,8 @@ main = \baseUrl, req ->
                     rowResultHttp =
                         when rowResult is
                             Ok v -> Ok v
-                            Err NotFound -> Err {status: 404, body: "", headers}
-                            Err _ -> Err {status: 500, body: "", headers}
+                            Err NotFound -> Err (Response {status: 404, body: "", headers})
+                            Err _ -> Err (Response {status: 500, body: "", headers})
                     resultHttp =
                         row <- Result.try rowResultHttp
                         todoResult = loadRowToTodo row baseUrl
@@ -127,8 +133,8 @@ main = \baseUrl, req ->
                         todo <- Result.map todoResultHttp
                         # TODO replace this with json encoding
                         todoStr = writeTodo "" todo
-                        {status: 200, body: todoStr, headers}
-                    mergeResult resultHttp |> Response |> always
+                        Response {status: 200, body: todoStr, headers}
+                    mergeResult resultHttp |> always
                 _ ->
                     Response {status: 404, body: "", headers} |> always
         T Options _ ->
@@ -178,12 +184,12 @@ loadJsonKVs = \body ->
         _ ->
             Break (Err HowDidIGetHere)
 
-mapErrToHttp : Result a b, List {k: Str, v: Str}, U16 -> Result a {status: U16, body: Str, headers: List {k: Str, v: Str}}
+# mapErrToHttp : Result a b, List {k: Str, v: Str}, U16 -> Result a Continuation
 mapErrToHttp = \result, headers, status ->
     when result is
         Ok v -> Ok v
         Err _ ->
-            Err {status, body: "", headers}
+            Err (Response {status, body: "", headers})
 
 
 mergeResult : Result a a -> a
