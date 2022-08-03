@@ -27,42 +27,38 @@ main = \baseUrl, req ->
     route = List.get pathList 1
     when T method route is
         T Post (Ok "") ->
-            # TODO: Make this not terrible
-            result <- loadBody
-            when result is
-                Ok body ->
-                    when loadJsonKVs body is
-                        Ok kvs ->
-                            order =
-                                when loadJsonI64Value kvs "order" is
-                                    Ok i ->
-                                        Int i
-                                    Err _ ->
-                                        Null
-                            when loadJsonStringValue kvs "title" is
-                                Ok title ->
-                                    insertResult <- dbExecute "INSERT INTO todos (title, item_order) VALUES (?1, ?2)" [Text title, order]
-                                    when insertResult is
-                                        Ok {lastInsertRowId: id} ->
-                                            rowResult <- dbFetchOne "SELECT id, title, completed, item_order FROM todos WHERE id = ?1" [Int id]
-                                            rowResultHttp = mapErrToHttp rowResult headers 500
-                                            resultHttp =
-                                                row <- Result.try rowResultHttp
-                                                todoResult = loadRowToTodo row baseUrl
-                                                todoResultHttp = mapErrToHttp todoResult headers 500
-                                                todo <- Result.map todoResultHttp
-                                                # TODO replace this with json encoding
-                                                todoStr = writeTodo "" todo
-                                                Response {status: 200, body: todoStr, headers}
-                                            mergeResult resultHttp |> always
-                                        Err _ ->
-                                            Response {status: 500, body: "", headers} |> always
-                                Err _ ->
-                                    Response {status: 400, body: "", headers} |> always
+            bodyResult <- loadBody
+            bodyResultHttp = mapErrToHttp bodyResult headers 500
+            kvsResultHttp =
+                body <- Result.try bodyResultHttp
+                mapErrToHttp (loadJsonKVs body) headers 400
+            (Result.map kvsResultHttp \kvs ->
+                order =
+                    when loadJsonI64Value kvs "order" is
+                        Ok i ->
+                            Int i
                         Err _ ->
-                            Response {status: 400, body: "", headers} |> always
-                Err _ ->
-                    Response {status: 500, body: "", headers} |> always
+                            Null
+                when loadJsonStringValue kvs "title" is
+                    Ok title ->
+                        insertResult <- DBExecute "INSERT INTO todos (title, item_order) VALUES (?1, ?2)" [Text title, order]
+                        insertResultHttp = mapErrToHttp insertResult headers 500
+                        (Result.map insertResultHttp \{lastInsertRowId: id} ->
+                                rowResult <- DBFetchOne "SELECT id, title, completed, item_order FROM todos WHERE id = ?1" [Int id]
+                                rowResultHttp = mapErrToHttp rowResult headers 500
+                                resultHttp =
+                                    row <- Result.try rowResultHttp
+                                    todoResult = loadRowToTodo row baseUrl
+                                    todoResultHttp = mapErrToHttp todoResult headers 500
+                                    todo <- Result.map todoResultHttp
+                                    # TODO replace this with json encoding
+                                    todoStr = writeTodo "" todo
+                                    Response {status: 200, body: todoStr, headers}
+                                mergeResult resultHttp |> always
+                        ) |> mergeResult |> always
+                    Err _ ->
+                        Response {status: 400, body: "", headers}
+            ) |> mergeResult |> always
         T Delete (Ok "") ->
             result <- dbExecute "DELETE FROM todos" []
             when result is
@@ -99,44 +95,41 @@ main = \baseUrl, req ->
                 _ ->
                     Response {status: 500, body: "", headers} |> always
         T Delete (Ok idStr) ->
-            when Str.toI64 idStr is
-                Ok id ->
-                    result <- dbExecute "DELETE FROM todos WHERE id = ?1" [Int id]
-                    when result is
-                        Ok {rowsAffected: 1} ->
-                            Response {status: 200, body: "", headers} |> always
-                        Ok _ ->
-                            Response {status: 400, body: "", headers} |> always
-                        Err _ ->
-                            Response {status: 500, body: "", headers} |> always
-                _ ->
-                    Response {status: 400, body: "", headers} |> always
+            idResultHttp = mapErrToHttp (Str.toI64 idStr) headers 400
+            (Result.map idResultHttp \id ->
+                result <- DBExecute "DELETE FROM todos WHERE id = ?1" [Int id]
+                when result is
+                    Ok {rowsAffected: 1} ->
+                        Response {status: 200, body: "", headers} |> always
+                    Ok _ ->
+                        Response {status: 400, body: "", headers} |> always
+                    Err _ ->
+                        Response {status: 500, body: "", headers} |> always
+            ) |> mergeResult |> always
         T Patch (Ok idStr) ->
-            when Str.toI64 idStr is
-                Ok _id ->
-                    Response {status: 400, body: idStr, headers} |> always
-                _ ->
-                    Response {status: 400, body: "", headers} |> always
+            idResultHttp = mapErrToHttp (Str.toI64 idStr) headers 400
+            (Result.map idResultHttp \_id ->
+                Response {status: 400, body: idStr, headers}
+            ) |> mergeResult |> always
         T Get (Ok idStr) ->
-            when Str.toI64 idStr is
-                Ok id ->
-                    rowResult <- dbFetchOne "SELECT id, title, completed, item_order FROM todos WHERE id = ?1" [Int id]
-                    rowResultHttp =
-                        when rowResult is
-                            Ok v -> Ok v
-                            Err NotFound -> Err (Response {status: 404, body: "", headers})
-                            Err _ -> Err (Response {status: 500, body: "", headers})
-                    resultHttp =
-                        row <- Result.try rowResultHttp
-                        todoResult = loadRowToTodo row baseUrl
-                        todoResultHttp = mapErrToHttp todoResult headers 500
-                        todo <- Result.map todoResultHttp
-                        # TODO replace this with json encoding
-                        todoStr = writeTodo "" todo
-                        Response {status: 200, body: todoStr, headers}
-                    mergeResult resultHttp |> always
-                _ ->
-                    Response {status: 404, body: "", headers} |> always
+            idResultHttp = mapErrToHttp (Str.toI64 idStr) headers 404
+            (Result.map idResultHttp \id ->
+                rowResult <- DBFetchOne "SELECT id, title, completed, item_order FROM todos WHERE id = ?1" [Int id]
+                rowResultHttp =
+                    when rowResult is
+                        Ok v -> Ok v
+                        Err NotFound -> Err (Response {status: 404, body: "", headers})
+                        Err _ -> Err (Response {status: 500, body: "", headers})
+                resultHttp =
+                    row <- Result.try rowResultHttp
+                    todoResult = loadRowToTodo row baseUrl
+                    todoResultHttp = mapErrToHttp todoResult headers 500
+                    todo <- Result.map todoResultHttp
+                    # TODO replace this with json encoding
+                    todoStr = writeTodo "" todo
+                    Response {status: 200, body: todoStr, headers}
+                mergeResult resultHttp |> always
+            ) |> mergeResult |> always
         T Options _ ->
             # Options header is a CORS request.
             # Just accept this so that things can work while running from local network.
