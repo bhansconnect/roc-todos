@@ -6,7 +6,7 @@ WORKDIR /app/
 RUN echo "DATABASE_URL=\"sqlite:todos.db\"" > .env
 RUN sqlx database setup
 
-FROM debian:latet
+FROM debian:latest
 # TODO: maybe one day have docker actually build this todo app.
 # Note: todos must already be built.
 WORKDIR /app/
