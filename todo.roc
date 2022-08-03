@@ -108,8 +108,122 @@ main = \baseUrl, req ->
             ) |> mergeResult |> always
         T Patch (Ok idStr) ->
             idResultHttp = mapErrToHttp (Str.toI64 idStr) headers 400
-            (Result.map idResultHttp \_id ->
-                Response {status: 400, body: idStr, headers}
+            (Result.map idResultHttp \id ->
+                bodyResult <- LoadBody
+                bodyResultHttp = mapErrToHttp bodyResult headers 500
+                kvsResultHttp =
+                    body <- Result.try bodyResultHttp
+                    mapErrToHttp (loadJsonKVs body) headers 400
+                (Result.map kvsResultHttp \kvs ->
+                    titleResult = loadJsonStringValue kvs "title"
+                    completedResult = loadJsonBooleanValue kvs "completed"
+                    orderResult = loadJsonI64Value kvs "order"
+                    # This is horrid and kind factorial in the number of supported combos...
+                    # only supporting the ones directly in the spec for now.
+                    when T titleResult completedResult orderResult is
+                        T (Ok title) (Ok completed) (Err _) ->
+                            updateResult <- DBExecute "UPDATE todos SET title = ?1, completed = ?2 WHERE id = ?2" [Text title, Boolean completed, Int id]
+                            updateResultHttp = mapErrToHttp updateResult headers 500
+                            (Result.map updateResultHttp \{rowsAffected} ->
+                                when rowsAffected is
+                                    1 ->
+                                        # Fetch and return the todo.
+                                        rowResult <- DBFetchOne "SELECT id, title, completed, item_order FROM todos WHERE id = ?1" [Int id]
+                                        rowResultHttp =
+                                            when rowResult is
+                                                Ok v -> Ok v
+                                                Err NotFound -> Err (Response {status: 404, body: "", headers})
+                                                Err _ -> Err (Response {status: 500, body: "", headers})
+                                        resultHttp =
+                                            row <- Result.try rowResultHttp
+                                            todoResult = loadRowToTodo row baseUrl
+                                            todoResultHttp = mapErrToHttp todoResult headers 500
+                                            todo <- Result.map todoResultHttp
+                                            # TODO replace this with json encoding
+                                            todoStr = writeTodo "" todo
+                                            Response {status: 200, body: todoStr, headers}
+                                        mergeResult resultHttp |> always
+                                    _ ->
+                                        Response {status: 500, body: "", headers}
+                            ) |> mergeResult |> always
+                        T (Ok title) (Err _) (Err _) ->
+                            updateResult <- DBExecute "UPDATE todos SET title = ?1 WHERE id = ?2" [Text title, Int id]
+                            updateResultHttp = mapErrToHttp updateResult headers 500
+                            (Result.map updateResultHttp \{rowsAffected} ->
+                                when rowsAffected is
+                                    1 ->
+                                        # Fetch and return the todo.
+                                        rowResult <- DBFetchOne "SELECT id, title, completed, item_order FROM todos WHERE id = ?1" [Int id]
+                                        rowResultHttp =
+                                            when rowResult is
+                                                Ok v -> Ok v
+                                                Err NotFound -> Err (Response {status: 404, body: "", headers})
+                                                Err _ -> Err (Response {status: 500, body: "", headers})
+                                        resultHttp =
+                                            row <- Result.try rowResultHttp
+                                            todoResult = loadRowToTodo row baseUrl
+                                            todoResultHttp = mapErrToHttp todoResult headers 500
+                                            todo <- Result.map todoResultHttp
+                                            # TODO replace this with json encoding
+                                            todoStr = writeTodo "" todo
+                                            Response {status: 200, body: todoStr, headers}
+                                        mergeResult resultHttp |> always
+                                    _ ->
+                                        Response {status: 500, body: "", headers}
+                            ) |> mergeResult |> always
+                        T (Err _) (Ok completed) (Err _) ->
+                            updateResult <- DBExecute "UPDATE todos SET completed = ?1 WHERE id = ?2" [Boolean completed, Int id]
+                            updateResultHttp = mapErrToHttp updateResult headers 500
+                            (Result.map updateResultHttp \{rowsAffected} ->
+                                when rowsAffected is
+                                    1 ->
+                                        # Fetch and return the todo.
+                                        rowResult <- DBFetchOne "SELECT id, title, completed, item_order FROM todos WHERE id = ?1" [Int id]
+                                        rowResultHttp =
+                                            when rowResult is
+                                                Ok v -> Ok v
+                                                Err NotFound -> Err (Response {status: 404, body: "", headers})
+                                                Err _ -> Err (Response {status: 500, body: "", headers})
+                                        resultHttp =
+                                            row <- Result.try rowResultHttp
+                                            todoResult = loadRowToTodo row baseUrl
+                                            todoResultHttp = mapErrToHttp todoResult headers 500
+                                            todo <- Result.map todoResultHttp
+                                            # TODO replace this with json encoding
+                                            todoStr = writeTodo "" todo
+                                            Response {status: 200, body: todoStr, headers}
+                                        mergeResult resultHttp |> always
+                                    _ ->
+                                        Response {status: 500, body: "", headers}
+                            ) |> mergeResult |> always
+                        T (Err _) (Err _) (Ok order) ->
+                            updateResult <- DBExecute "UPDATE todos SET item_order = ?1 WHERE id = ?2" [Int order, Int id]
+                            updateResultHttp = mapErrToHttp updateResult headers 500
+                            (Result.map updateResultHttp \{rowsAffected} ->
+                                when rowsAffected is
+                                    1 ->
+                                        # Fetch and return the todo.
+                                        rowResult <- DBFetchOne "SELECT id, title, completed, item_order FROM todos WHERE id = ?1" [Int id]
+                                        rowResultHttp =
+                                            when rowResult is
+                                                Ok v -> Ok v
+                                                Err NotFound -> Err (Response {status: 404, body: "", headers})
+                                                Err _ -> Err (Response {status: 500, body: "", headers})
+                                        resultHttp =
+                                            row <- Result.try rowResultHttp
+                                            todoResult = loadRowToTodo row baseUrl
+                                            todoResultHttp = mapErrToHttp todoResult headers 500
+                                            todo <- Result.map todoResultHttp
+                                            # TODO replace this with json encoding
+                                            todoStr = writeTodo "" todo
+                                            Response {status: 200, body: todoStr, headers}
+                                        mergeResult resultHttp |> always
+                                    _ ->
+                                        Response {status: 500, body: "", headers}
+                            ) |> mergeResult |> always
+                        _ ->
+                            Response {status: 400, body: "", headers}
+                ) |> mergeResult |> always
             ) |> mergeResult |> always
         T Get (Ok idStr) ->
             idResultHttp = mapErrToHttp (Str.toI64 idStr) headers 404
@@ -191,6 +305,10 @@ mergeResult = \result ->
         Ok v -> v
         Err v -> v
 
+loadJsonBooleanValue = \kvs, key ->
+    val <- Result.map (Dict.get kvs "\"\(key)\"")
+    val == "true"
+
 loadJsonI64Value = \kvs, key ->
     valStr <- Result.try (Dict.get kvs "\"\(key)\"") 
     Str.toI64 valStr
@@ -237,48 +355,14 @@ loadRowToTodo = \row, baseUrl ->
         _ ->
             Err InvalidTodo
 
-# Some reason I can't pull this out into another function.
-# Type checking fails despite printing a matching type.
-# fetchTodo = \id, todoCont ->
-#     rowResult <- dbFetchOne "SELECT title, completed, item_order FROM todos WHERE id = ?1" [Int id]
-#     todoResult = Result.map rowResult \row ->
-#         title =
-#             when List.get row 0 is
-#                 Ok (Text t) ->
-#                     Some t
-#                 _ ->
-#                     None
-#         completed =
-#             when List.get row 1 is
-#                 Ok (Boolean b) ->
-#                     Some b
-#                 _ ->
-#                     None
-#         itemOrder =
-#             when List.get row 2 is
-#                 Ok (Int i) ->
-#                     Some i
-#                 _ ->
-#                     None
-#         {title, completed, itemOrder}
-#     out =
-#         when todoResult is
-#             Ok {title: Some title, completed: Some completed, itemOrder: itemOrder} ->
-#                 Ok {title, completed, itemOrder}
-#             Ok _ ->
-#                 Err InvalidTodo
-#             Err _ ->
-#                 Err QueryError
-#     todoCont out
-
 dbExecute = \str, params, cont ->
     DBExecute str params cont |> always
 
 dbFetchAll = \str, params, cont ->
     DBFetchAll str params cont |> always
 
-dbFetchOne = \str, params, cont ->
-    DBFetchOne str params cont |> always
+# dbFetchOne = \str, params, cont ->
+#     DBFetchOne str params cont |> always
 
 loadBody = \cont ->
     LoadBody cont |> always

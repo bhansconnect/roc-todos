@@ -219,6 +219,7 @@ async fn root(
                     for data in (&*(bind_params_ptr as *const RocList<SqlData>)).iter() {
                         match data.discriminant() {
                             discriminant_SqlData::Int => query = query.bind(data.as_Int()),
+                            discriminant_SqlData::Boolean => query = query.bind(data.as_Boolean()),
                             discriminant_SqlData::Text => {
                                 query = query.bind(data.as_Text().as_str())
                             }
@@ -256,6 +257,7 @@ async fn root(
                     for data in (&*(bind_params_ptr as *const RocList<SqlData>)).iter() {
                         match data.discriminant() {
                             discriminant_SqlData::Int => query = query.bind(data.as_Int()),
+                            discriminant_SqlData::Boolean => query = query.bind(data.as_Boolean()),
                             discriminant_SqlData::Text => {
                                 query = query.bind(data.as_Text().as_str())
                             }
@@ -290,6 +292,7 @@ async fn root(
                     for data in (&*(bind_params_ptr as *const RocList<SqlData>)).iter() {
                         match data.discriminant() {
                             discriminant_SqlData::Int => query = query.bind(data.as_Int()),
+                            discriminant_SqlData::Boolean => query = query.bind(data.as_Boolean()),
                             discriminant_SqlData::Text => {
                                 query = query.bind(data.as_Text().as_str())
                             }
