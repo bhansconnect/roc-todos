@@ -1,4 +1,4 @@
-app "todo"
+app "todos"
     packages { pf: "platform/main.roc" }
     imports [pf.Effect.{Effect, always, after}]
     provides [main] to pf
