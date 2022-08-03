@@ -1,3 +1,7 @@
 hyper-roc
 target
 *.o
+dynhost
+libapp.so
+metadata
+preprocessedhost
