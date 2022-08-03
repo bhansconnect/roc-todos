@@ -476,7 +476,8 @@ pub extern "C" fn rust_main() -> i32 {
             // Some reason roc_std doesn't expose anything related to refounts.
             let base_url_ptr = (&base_url as *const RocStr) as usize;
             if base_url.len() >= 24 {
-                let refcount_ptr = (base_url_ptr as *mut i64).sub(1);
+                let str_ptr = base_url_ptr as *const *mut i64;
+                let refcount_ptr = (*str_ptr).sub(1);
                 // 0 is infinite refcount.
                 *refcount_ptr = 0;
             }
