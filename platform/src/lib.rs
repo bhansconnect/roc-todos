@@ -20,7 +20,7 @@ use glue::{discriminant_SqlData, SqlData, SqlError};
 
 extern "C" {
     #[link_name = "roc__mainForHost_1_exposed_generic"]
-    fn roc_main(closure_data: *mut u8, base_url: *const RocStr, req: *const Request<Body>);
+    fn roc_main(closure_data: *mut u8, base_url: *const ConstRocStr, req: *const Request<Body>);
 
     #[link_name = "roc__mainForHost_size"]
     fn roc_main_size() -> usize;
@@ -158,6 +158,34 @@ struct RocResponse {
     status: u16,
 }
 
+#[repr(transparent)]
+#[derive(Clone)]
+struct ConstRocStr(RocStr);
+
+unsafe impl Send for ConstRocStr {}
+unsafe impl Sync for ConstRocStr {}
+impl From<RocStr> for ConstRocStr {
+    fn from(s: RocStr) -> Self {
+        // Overwrite the refcount with a constant refcount.
+        if s.len() >= 24 {
+            let str_ptr = &s as *const RocStr as *const *mut i64;
+            unsafe {
+                let refcount_ptr = (*str_ptr).sub(1);
+                // This must be unique.
+                assert_eq!(*refcount_ptr, i64::MIN);
+                // 0 is infinite refcount.
+                *refcount_ptr = 0;
+            }
+        }
+        ConstRocStr(s)
+    }
+}
+impl Drop for ConstRocStr {
+    fn drop(&mut self) {
+        // ConstRocStr can never be freed.
+    }
+}
+
 fn translate_row(row: SqliteRow) -> RocList<SqlData> {
     RocList::from_iter(row.columns().iter().map(|col| {
         // Some reason they only expose the name and not the enum.
@@ -184,7 +212,7 @@ fn translate_row(row: SqliteRow) -> RocList<SqlData> {
 
 async fn root(
     pool: SqlitePool,
-    base_url: usize,
+    base_url: ConstRocStr,
     mut req: Request<Body>,
 ) -> Result<Response<Body>, Infallible> {
     log::debug!("Got Request: {:?}", &req);
@@ -196,7 +224,7 @@ async fn root(
         stackalloc::alloca(size, |buffer| {
             roc_main(
                 buffer.as_mut_ptr() as *mut u8,
-                base_url as *const RocStr,
+                &base_url as *const ConstRocStr,
                 &req,
             );
 
@@ -467,23 +495,11 @@ pub extern "C" fn rust_main() -> i32 {
                 .expect("failed to connect to database");
 
             // Since Roc* types are not Send I have to use usize a lot to get around await issues
-            let base_url = RocStr::from(
+            let base_url = ConstRocStr::from(RocStr::from(
                 std::env::var("BASE_URL")
                     .expect("failed to load BASE_URL environment variable")
                     .as_str(),
-            );
-            // More hacks to make sure we don't end up freing this str.
-            // Some reason roc_std doesn't expose anything related to refounts.
-            let base_url_ptr = (&base_url as *const RocStr) as usize;
-            if base_url.len() >= 24 {
-                let str_ptr = base_url_ptr as *const *mut i64;
-                let refcount_ptr = (*str_ptr).sub(1);
-                // 0 is infinite refcount.
-                *refcount_ptr = 0;
-            }
-            // We are just gonna leak this. It needs to live the entire application anyway.
-            std::mem::forget(base_url);
-
+            ));
             // For every connection, we must make a `Service` to handle all
             // incoming HTTP requests on said connection.
             let make_svc = make_service_fn(move |_conn| {
@@ -493,9 +509,10 @@ pub extern "C" fn rust_main() -> i32 {
 
                 // Pool is meant to be cloned to a handler and should be cheap to clone here.
                 let pool = pool.clone();
+                let base_url = base_url.clone();
                 async move {
                     Ok::<_, Infallible>(service_fn(move |req| {
-                        root(pool.clone(), base_url_ptr, req)
+                        root(pool.clone(), base_url.clone(), req)
                     }))
                 }
             });
